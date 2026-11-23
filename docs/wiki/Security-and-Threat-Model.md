@@ -4,6 +4,8 @@
 
 ## Trust boundaries
 
+Motion companion: [Trust boundary visual](../visuals/trust-boundary.html) · [Gallery](../visuals/index.html).
+
 ```mermaid
 flowchart TB
   subgraph U [Untrusted]

@@ -2,6 +2,7 @@
 
 - [Home](Home)
 - [Architecture](Architecture)
+- [Motion visuals](../visuals/index.html)
 - [Security & Threat Model](Security-and-Threat-Model)
 - [Frontiers & Capabilities](Frontiers-and-Capabilities)
 - [Contracts & Schemas](Contracts-and-Schemas)

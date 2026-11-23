@@ -96,6 +96,8 @@ flowchart LR
 
 See [Architecture wiki](docs/wiki/Architecture.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+**Motion visuals** (open in a browser): [docs/visuals/](docs/visuals/index.html) — [Pipeline / DAG](docs/visuals/pipeline-dag.html) · [Trust boundary](docs/visuals/trust-boundary.html). Documentation companions only; submit/outreach stay **off**.
+
 ---
 
 ## Frontiers overview (F01–F10)
@@ -196,6 +198,7 @@ CI runs pytest with `JOBOPS_ALLOW_SUBMIT=0`, `JOBOPS_ENABLE_LIVE_SUBMIT=0`, and 
 | [docs/USER-GUIDE.md](docs/USER-GUIDE.md) | Install / schedule UX |
 | [docs/PRODUCT-SCOPE.md](docs/PRODUCT-SCOPE.md) | Personas, inventory, success metrics |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Frontiers and DAG |
+| [docs/visuals/](docs/visuals/index.html) | Motion DAG + trust-boundary companions |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Phased delivery gates |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | PR expectations |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |

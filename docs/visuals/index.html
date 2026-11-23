@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>jobsOps — Architecture visuals</title>
+  <meta name="description" content="Motion-designed companions to jobsOps architecture Mermaid diagrams." />
+  <link rel="stylesheet" href="shared.css" />
+  <style>
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1.15rem;
+    }
+
+    @media (max-width: 720px) {
+      .gallery {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .tile {
+      position: relative;
+      display: block;
+      text-decoration: none;
+      color: inherit;
+      border: 1px solid var(--ink-line);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: var(--ink-elevated);
+      min-height: 220px;
+      opacity: 0;
+      transform: translateY(16px);
+      transition: border-color 0.3s, transform 0.35s var(--ease-out), box-shadow 0.35s;
+      animation: rise 0.85s var(--ease-out) forwards;
+    }
+
+    .tile:nth-child(1) { animation-delay: 0.35s; }
+    .tile:nth-child(2) { animation-delay: 0.48s; }
+
+    .tile:hover {
+      border-color: rgba(46, 230, 166, 0.5);
+      transform: translateY(-4px);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4), 0 0 30px rgba(46, 230, 166, 0.08);
+    }
+
+    .tile-preview {
+      height: 130px;
+      position: relative;
+      overflow: hidden;
+      border-bottom: 1px solid var(--ink-line);
+    }
+
+    .tile-preview.dag {
+      background:
+        radial-gradient(circle at 20% 50%, rgba(46, 230, 166, 0.2), transparent 40%),
+        radial-gradient(circle at 70% 40%, rgba(240, 162, 2, 0.12), transparent 35%),
+        linear-gradient(135deg, #0a1210, #0c1520);
+    }
+
+    .tile-preview.trust {
+      background:
+        linear-gradient(90deg,
+          rgba(255, 107, 90, 0.18) 0%,
+          rgba(255, 107, 90, 0.08) 28%,
+          rgba(46, 230, 166, 0.2) 42%,
+          rgba(46, 230, 166, 0.12) 68%,
+          rgba(126, 200, 255, 0.2) 82%,
+          rgba(126, 200, 255, 0.1) 100%),
+        #0a1018;
+    }
+
+    .mini-nodes {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      padding: 0 1rem;
+    }
+
+    .mini-node {
+      width: 42px;
+      height: 18px;
+      border-radius: 3px;
+      border: 1px solid rgba(46, 230, 166, 0.5);
+      background: rgba(7, 11, 16, 0.6);
+      opacity: 0;
+      animation: rise 0.5s var(--ease-out) forwards, pulse-glow 2.4s var(--ease-soft) infinite;
+    }
+
+    .mini-node:nth-child(1) { animation-delay: 0.6s, 1.2s; }
+    .mini-node:nth-child(2) { animation-delay: 0.75s, 1.4s; border-color: rgba(46, 230, 166, 0.7); }
+    .mini-node:nth-child(3) { animation-delay: 0.9s, 1.6s; border-color: rgba(240, 162, 2, 0.6); }
+    .mini-node:nth-child(4) { animation-delay: 1.05s, 1.8s; border-color: rgba(126, 200, 255, 0.55); }
+
+    .mini-bars {
+      position: absolute;
+      inset: 18% 12%;
+      display: grid;
+      grid-template-columns: 1fr 8px 1.2fr 8px 0.9fr;
+      gap: 0.35rem;
+    }
+
+    .mini-bars > i {
+      display: block;
+      border-radius: 4px;
+      border: 1px solid var(--ink-line);
+      opacity: 0;
+      animation: rise 0.6s var(--ease-out) forwards;
+    }
+
+    .mini-bars > i:nth-child(1) {
+      background: rgba(255, 107, 90, 0.15);
+      border-color: rgba(255, 107, 90, 0.35);
+      animation-delay: 0.65s;
+    }
+    .mini-bars > i:nth-child(2),
+    .mini-bars > i:nth-child(4) {
+      background: linear-gradient(180deg, rgba(46, 230, 166, 0.5), rgba(126, 200, 255, 0.4));
+      animation-delay: 0.8s;
+      animation: rise 0.6s var(--ease-out) 0.8s forwards, membrane-pulse-mini 2.5s linear infinite;
+    }
+    .mini-bars > i:nth-child(3) {
+      background: rgba(46, 230, 166, 0.12);
+      border-color: rgba(46, 230, 166, 0.4);
+      animation-delay: 0.9s;
+    }
+    .mini-bars > i:nth-child(5) {
+      background: rgba(126, 200, 255, 0.12);
+      border-color: rgba(126, 200, 255, 0.4);
+      animation-delay: 1.05s;
+    }
+
+    @keyframes membrane-pulse-mini {
+      0%, 100% { opacity: 0.55; }
+      50% { opacity: 1; }
+    }
+
+    .tile-body {
+      padding: 1rem 1.1rem 1.15rem;
+    }
+
+    .tile-id {
+      font-family: var(--font-mono);
+      font-size: 0.62rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--signal);
+      margin-bottom: 0.35rem;
+    }
+
+    .tile h2 {
+      margin: 0 0 0.4rem;
+      font-family: var(--font-display);
+      font-size: 1.15rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      color: var(--text);
+    }
+
+    .tile p {
+      margin: 0;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+    }
+
+    .system-note {
+      margin-top: 1.75rem;
+      padding: 1rem 1.15rem;
+      border: 1px dashed rgba(91, 124, 148, 0.45);
+      border-radius: var(--radius-md);
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      animation: rise 0.8s var(--ease-out) 0.6s both;
+    }
+
+    .system-note code {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--signal);
+    }
+  </style>
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true"></div>
+  <main class="shell">
+    <header>
+      <div class="brand-lockup">
+        <h1 class="brand">jobsOps</h1>
+        <span class="badge">Submit / outreach OFF</span>
+      </div>
+      <p class="lede">
+        Architecture visuals for maintainers — motion companions to the README Mermaid diagrams.
+        Same design system: night operations console, signal teal, gate amber.
+      </p>
+      <nav class="nav-strip" aria-label="Docs">
+        <a href="index.html" aria-current="page">Gallery</a>
+        <a href="../../README.md">README</a>
+        <a href="../wiki/Home.md">Wiki home</a>
+        <a href="../wiki/Architecture.md">Architecture</a>
+      </nav>
+    </header>
+
+    <div class="gallery">
+      <a class="tile" href="pipeline-dag.html">
+        <div class="tile-preview dag" aria-hidden="true">
+          <div class="mini-nodes">
+            <span class="mini-node"></span>
+            <span class="mini-node"></span>
+            <span class="mini-node"></span>
+            <span class="mini-node"></span>
+          </div>
+        </div>
+        <div class="tile-body">
+          <div class="tile-id">VIS-01</div>
+          <h2>Pipeline / DAG</h2>
+          <p>Staggered harness stages, eligibility forks, and a locked submit gate.</p>
+        </div>
+      </a>
+      <a class="tile" href="trust-boundary.html">
+        <div class="tile-preview trust" aria-hidden="true">
+          <div class="mini-bars">
+            <i></i><i></i><i></i><i></i><i></i>
+          </div>
+        </div>
+        <div class="tile-body">
+          <div class="tile-id">VIS-02</div>
+          <h2>Trust boundary</h2>
+          <p>Untrusted fog → control plane membrane → private JOBOPS_HOME vault.</p>
+        </div>
+      </a>
+    </div>
+
+    <p class="system-note">
+      Preview locally: open <code>docs/visuals/index.html</code> in a browser
+      (or <code>python3 -m http.server</code> from the repo root and visit
+      <code>/docs/visuals/</code>). These are documentation artifacts, not a production dashboard.
+    </p>
+  </main>
+</body>
+</html>
