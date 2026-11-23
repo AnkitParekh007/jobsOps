@@ -1,7 +1,7 @@
 # Cursor master implementation brief
 
 ## Role
-You are the principal engineer implementing a public, **provider-neutral** jobsOps product. This is a multi-phase engineering project, not a single prompt-generation task. Follow `AGENTS.md` and all `docs/` specifications. Use small, testable PRs and never claim production readiness without an independent audit.
+You are the principal engineer implementing a public, **provider-neutral** jobsOps product. This is a multi-phase engineering project, not a single prompt-generation task. Follow `AGENTS.md` and all `docs/` specifications. Explicitly read `docs/REFERENCE-GAP-ANALYSIS.md` and `docs/EXTENSIBILITY-AND-DISTRIBUTION.md`; implement the priority gaps as roadmap deliverables. Treat career-ops as a reference source, not a code or asset import. Use small, testable PRs and never claim production readiness without an independent audit.
 
 ## Non-negotiable product constraints
 1. Do NOT copy personal job-search data, credentials, email addresses, specific tracker IDs, prior employer targeting, or local artifacts into the public repository.
@@ -43,6 +43,13 @@ P8 deployment: platform install smoke tests, release packaging, CI/CD, security 
 - No external side effects unless explicitly scoped and authorized.
 - PR summary: changed behavior, commands run, results, risks, and phase acceptance table.
 - Keep PR in review status; do not self-approve production readiness.
+
+## Reference gap acceptance additions
+- P0: user/system data contract with backup/restore and clean onboarding; agent skill router that never invents an engine.
+- P1: typed source registry with partial/blocked/exhausted states, liveness and repost lineage, posting integrity, cheap deterministic triage, cost limits.
+- P2: governed plugin manifest/allowlist/pin/review, real CLI adapter smoke tests and credential boundary.
+- P3+: optional accessible dashboard, ATS-specific safe form guidance, platform distribution packaging and contributor CI.
+- For each imported idea, record attribution/license review and test evidence; do not copy reference content or marketing claims wholesale.
 
 ## Final delivery from Cursor
 Provide links to all PRs, a feature/status matrix with evidence per platform, reproducible install/run commands, E01-E12 evaluation report, unresolved P0/P1/P2 list, test and performance results, and full audit handoff. **Stop before declaring production-ready.** Owner and independent auditor decide go/no-go.
