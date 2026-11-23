@@ -117,12 +117,23 @@ CREATE TABLE IF NOT EXISTS approvals (
   meta_json TEXT NOT NULL DEFAULT '{}'
 );
 
+CREATE TABLE IF NOT EXISTS submission_reservations (
+  reservation_id TEXT PRIMARY KEY,
+  job_key TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  submit_date TEXT NOT NULL,
+  state TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(job_key, submit_date)
+);
+
 CREATE INDEX IF NOT EXISTS idx_artifacts_run ON artifacts(run_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_job ON artifacts(job_key);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_task_run ON task_attempts(run_id, stage);
 CREATE INDEX IF NOT EXISTS idx_approvals_job ON approvals(job_key, status);
 CREATE INDEX IF NOT EXISTS idx_approvals_user ON approvals(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_reservations_date ON submission_reservations(submit_date, state);
 """
 
 
@@ -320,6 +331,19 @@ class Ledger:
         self._conn.commit()
         self.audit("lock_released", run_id=run_id, detail={"resource": resource})
 
+    def _require_approval_authority(self, *, action: str) -> None:
+        """Approval writes are orchestrator-only — never from untrusted agents."""
+        from trust_boundary import (  # local import
+            agent_role_from_env,
+            is_untrusted_agent_role,
+            require_orchestrator,
+        )
+
+        role = agent_role_from_env()
+        if is_untrusted_agent_role(role):
+            raise PermissionError(f"approval_write_forbidden_in_agent_role:{role}:{action}")
+        require_orchestrator("record_approval" if action != "approve" else "approve")
+
     def record_approval(
         self,
         *,
@@ -329,17 +353,24 @@ class Ledger:
         session_id: str,
         artifact_fingerprint: str,
         document_path: str = "",
-        status: str = "approved",
-        decided_by: str = "user",
+        status: str = "pending",
+        decided_by: str = "",
         run_id: Optional[str] = None,
         meta: Optional[Mapping[str, Any]] = None,
+        require_authority: bool = True,
     ) -> str:
         """
-        Durable approval bound to authenticated user, requisition, session, document.
-        Evidence issuance must look up this row — agents cannot mint approvals.
+        Durable approval bound to user, requisition, session, document.
+
+        New rows default to ``pending``. Creating ``approved``/``revoked`` directly
+        still requires orchestrator authority (prefer ApprovalController.approve).
         """
         if status not in {"pending", "approved", "revoked"}:
             raise ValueError(f"invalid approval status: {status}")
+        if require_authority:
+            self._require_approval_authority(
+                action="approve" if status in {"approved", "revoked"} else "record"
+            )
         now = _now()
         decided_at = now if status in {"approved", "revoked"} else None
         with self.transaction():
@@ -391,6 +422,53 @@ class Ledger:
             )
         return approval_id
 
+    def decide_approval(
+        self,
+        *,
+        approval_id: str,
+        status: str,
+        decided_by: str,
+        meta: Optional[Mapping[str, Any]] = None,
+        require_authority: bool = True,
+    ) -> None:
+        """Transition an existing approval (pending → approved/revoked)."""
+        if status not in {"approved", "revoked"}:
+            raise ValueError(f"invalid decision status: {status}")
+        if require_authority:
+            self._require_approval_authority(action="approve")
+        row = self.get_approval(approval_id)
+        if row is None:
+            raise KeyError(f"approval_not_found:{approval_id}")
+        now = _now()
+        merged = dict(row.get("meta") or {})
+        if meta:
+            merged.update(meta)
+        with self.transaction():
+            self._conn.execute(
+                """
+                UPDATE approvals
+                SET status=?, decided_at=?, decided_by=?, meta_json=?
+                WHERE approval_id=?
+                """,
+                (status, now, decided_by, json.dumps(merged, ensure_ascii=False), approval_id),
+            )
+            self._conn.execute(
+                "INSERT INTO audit_events(created_at, run_id, kind, detail_json) VALUES (?,?,?,?)",
+                (
+                    now,
+                    row.get("run_id"),
+                    "approval_decided",
+                    json.dumps(
+                        {
+                            "approval_id": approval_id,
+                            "status": status,
+                            "decided_by": decided_by,
+                        },
+                        ensure_ascii=False,
+                    ),
+                ),
+            )
+
     def get_approval(self, approval_id: str) -> Optional[dict[str, Any]]:
         row = self._conn.execute(
             "SELECT * FROM approvals WHERE approval_id=?",
@@ -437,6 +515,154 @@ class Ledger:
         if row["artifact_fingerprint"] != artifact_fingerprint:
             return False, "approval_fingerprint_mismatch", row
         return True, "ok", row
+
+    def count_submission_reservations(
+        self,
+        *,
+        submit_date: str,
+        states: tuple[str, ...] = ("reserved", "consumed"),
+    ) -> int:
+        placeholders = ",".join("?" for _ in states)
+        row = self._conn.execute(
+            f"""
+            SELECT COUNT(*) AS n FROM submission_reservations
+            WHERE submit_date=? AND state IN ({placeholders})
+            """,
+            (submit_date, *states),
+        ).fetchone()
+        return int(row["n"] if row else 0)
+
+    def reserve_submission_slot(
+        self,
+        *,
+        reservation_id: str,
+        job_key: str,
+        run_id: str,
+        submit_date: str,
+        cap: int = 1,
+    ) -> tuple[bool, str, Optional[str]]:
+        """
+        Atomically reserve a daily submit slot across concurrent processes.
+
+        Uses BEGIN IMMEDIATE so concurrent writers serialize on the SQLite lock.
+        Returns (ok, reason, reservation_id).
+        """
+        from trust_boundary import require_orchestrator
+
+        require_orchestrator("reserve_submit")
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            existing = self._conn.execute(
+                """
+                SELECT reservation_id, state, run_id FROM submission_reservations
+                WHERE job_key=? AND submit_date=?
+                """,
+                (job_key, submit_date),
+            ).fetchone()
+            if existing and existing["state"] in {"reserved", "consumed"}:
+                if existing["run_id"] == run_id:
+                    self._conn.commit()
+                    return True, "already_reserved", str(existing["reservation_id"])
+                self._conn.rollback()
+                return False, "job_already_reserved", str(existing["reservation_id"])
+            used = self._conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM submission_reservations
+                WHERE submit_date=? AND state IN ('reserved', 'consumed')
+                """,
+                (submit_date,),
+            ).fetchone()
+            if int(used["n"] if used else 0) >= cap:
+                self._conn.rollback()
+                return False, "daily_submit_cap_exhausted", None
+            now = _now()
+            if existing:
+                self._conn.execute(
+                    """
+                    UPDATE submission_reservations
+                    SET reservation_id=?, run_id=?, state='reserved', created_at=?
+                    WHERE job_key=? AND submit_date=?
+                    """,
+                    (reservation_id, run_id, now, job_key, submit_date),
+                )
+            else:
+                self._conn.execute(
+                    """
+                    INSERT INTO submission_reservations(
+                      reservation_id, job_key, run_id, submit_date, state, created_at
+                    ) VALUES (?,?,?,?, 'reserved', ?)
+                    """,
+                    (reservation_id, job_key, run_id, submit_date, now),
+                )
+            self._conn.execute(
+                "INSERT INTO audit_events(created_at, run_id, kind, detail_json) VALUES (?,?,?,?)",
+                (
+                    now,
+                    run_id,
+                    "submission_reserved",
+                    json.dumps(
+                        {
+                            "reservation_id": reservation_id,
+                            "job_key": job_key,
+                            "submit_date": submit_date,
+                            "cap": cap,
+                        },
+                        ensure_ascii=False,
+                    ),
+                ),
+            )
+            self._conn.commit()
+            return True, "reserved", reservation_id
+        except Exception:
+            try:
+                self._conn.rollback()
+            except sqlite3.Error:
+                pass
+            raise
+
+    def consume_submission_reservation(
+        self, reservation_id: str, *, run_id: Optional[str] = None
+    ) -> None:
+        now = _now()
+        with self.transaction():
+            self._conn.execute(
+                """
+                UPDATE submission_reservations SET state='consumed'
+                WHERE reservation_id=? AND state='reserved'
+                """,
+                (reservation_id,),
+            )
+            self._conn.execute(
+                "INSERT INTO audit_events(created_at, run_id, kind, detail_json) VALUES (?,?,?,?)",
+                (
+                    now,
+                    run_id,
+                    "submission_reservation_consumed",
+                    json.dumps({"reservation_id": reservation_id}, ensure_ascii=False),
+                ),
+            )
+
+    def release_submission_reservation(
+        self, reservation_id: str, *, run_id: Optional[str] = None
+    ) -> None:
+        now = _now()
+        with self.transaction():
+            self._conn.execute(
+                """
+                UPDATE submission_reservations SET state='released'
+                WHERE reservation_id=? AND state='reserved'
+                """,
+                (reservation_id,),
+            )
+            self._conn.execute(
+                "INSERT INTO audit_events(created_at, run_id, kind, detail_json) VALUES (?,?,?,?)",
+                (
+                    now,
+                    run_id,
+                    "submission_reservation_released",
+                    json.dumps({"reservation_id": reservation_id}, ensure_ascii=False),
+                ),
+            )
 
     def append_artifact(self, envelope: Mapping[str, Any]) -> bool:
         """Insert enveloped artifact. Returns False if idempotent duplicate."""

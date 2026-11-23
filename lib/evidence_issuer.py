@@ -2,12 +2,12 @@
 """
 Trusted evidence issuer — isolated from untrusted agent processes.
 
-Agents never hold the HMAC secret and cannot mint evidence without a durable
-approval row bound to user + requisition + session + exact document fingerprint.
+Agents never hold the HMAC secret and cannot mint evidence without:
+1. A live OrchestratorContext (not merely absence of JOBOPS_AGENT_ROLE), and
+2. A durable approved ledger row bound to user + requisition + session + fingerprint.
 """
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 from typing import Any, Optional, Sequence
@@ -22,6 +22,11 @@ from submission_authorize import (  # noqa: E402
     evidence_secret,
     issue_consent_record,
     issue_trusted_evidence,
+)
+from trust_boundary import (  # noqa: E402
+    agent_role_from_env,
+    is_untrusted_agent_role,
+    require_orchestrator,
 )
 
 # Claims that require a durable approved row before minting.
@@ -44,29 +49,25 @@ class EvidenceIssuanceError(PermissionError):
     """Raised when issuance is refused (missing approval, agent context, etc.)."""
 
 
-def _reject_agent_context() -> None:
+def _require_issuance_authority() -> None:
     """
-    Fail closed if called from an agent-role environment.
-    Trusted issuance runs only in the orchestrator / authorize process.
+    Trusted issuance depends on protected orchestrator state.
+
+    Clearing or forging JOBOPS_AGENT_ROLE is insufficient — a live
+    OrchestratorContext with ``issue_evidence`` scope is required.
     """
-    role = (os.environ.get("JOBOPS_AGENT_ROLE") or "").strip()
-    if role and role not in {"", "deterministic", "orchestrator", "authorize"}:
-        # frontier_submit / discovery / verification agents cannot mint.
-        if role in {
-            "discovery",
-            "verification",
-            "frontier_rank",
-            "frontier_submit",
-            "outreach",
-        }:
-            raise EvidenceIssuanceError(
-                f"evidence_issuance_forbidden_in_agent_role:{role}"
-            )
+    role = agent_role_from_env()
+    if is_untrusted_agent_role(role):
+        raise EvidenceIssuanceError(f"evidence_issuance_forbidden_in_agent_role:{role}")
+    try:
+        require_orchestrator("issue_evidence")
+    except PermissionError as exc:
+        raise EvidenceIssuanceError(str(exc)) from exc
 
 
 class TrustedEvidenceIssuer:
     """
-    Mint HMAC evidence only after durable approval lookup.
+    Mint HMAC evidence only after durable approval lookup + orchestrator authority.
     Secret is loaded from installation-specific storage — never from agent env widen.
     """
 
@@ -77,7 +78,7 @@ class TrustedEvidenceIssuer:
         workspace_home: Optional[Path] = None,
         secret: Optional[bytes] = None,
     ) -> None:
-        _reject_agent_context()
+        _require_issuance_authority()
         self.ledger = ledger
         self.workspace_home = workspace_home
         if secret is not None:
@@ -96,8 +97,7 @@ class TrustedEvidenceIssuer:
         artifact_fingerprint: str,
         ttl_sec: int = 3600,
     ) -> dict[str, Any]:
-        _reject_agent_context()
-        # All issuance is gated on a durable approved row (agents cannot mint).
+        _require_issuance_authority()
         ok, reason, row = self.ledger.require_approved(
             approval_id,
             user_id=user_id,
@@ -113,7 +113,6 @@ class TrustedEvidenceIssuer:
         session_id = row["session_id"]
         artifact_fingerprint = row["artifact_fingerprint"]
         if claim not in APPROVAL_GATED_CLAIMS and claim != "user_consent":
-            # Unknown claims still require approval; keep allowlist for documentation.
             pass
 
         if claim == "user_consent":

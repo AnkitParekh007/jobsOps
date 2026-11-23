@@ -28,6 +28,8 @@ jobops = "jobops.cli:main"
 [tool.setuptools]
 py-modules = [
   "agent_runtime",
+  "agent_sandbox",
+  "approval_controller",
   "build_exclusion_index",
   "build_worker_prompts",
   "contracts",
@@ -37,7 +39,9 @@ py-modules = [
   "learning_proposals",
   "ledger",
   "merge_shards",
+  "mock_ats_portal",
   "outreach_drafts",
+  "pdf_fixture",
   "policy",
   "rank_opportunities",
   "run_context",
@@ -45,6 +49,7 @@ py-modules = [
   "sheets_sync",
   "submission_authorize",
   "tool_broker",
+  "trust_boundary",
   "url_safety",
   "user_workspace",
   "validate_handoff_state",

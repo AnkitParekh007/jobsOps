@@ -16,8 +16,16 @@ _LIB = Path(__file__).resolve().parent
 if str(_LIB) not in sys.path:
     sys.path.insert(0, str(_LIB))
 
+from agent_sandbox import (  # noqa: E402
+    SandboxViolation,
+    require_enforceable_restrictions,
+)
 from contracts import POLICY_VERSION  # noqa: E402
 from policy import tool_allowed  # noqa: E402
+from trust_boundary import (  # noqa: E402
+    assert_env_has_no_secrets,
+    build_agent_subprocess_env,
+)
 
 # Least-privilege tool scopes by role — enforced at the invoke / adapter boundary.
 ROLE_TOOL_SCOPES: dict[str, frozenset[str]] = {
@@ -196,25 +204,51 @@ class AgentRuntime:
             )
         # Mutate request to the sealed allowlist so adapters cannot widen scope.
         req.allowed_tools = sorted(allowed)
+        # Fail closed when FS/process/network/tool restrictions cannot be enforced
+        # outside prompts (third-party CLIs). Deterministic path is exempt.
+        try:
+            sandbox_mode = require_enforceable_restrictions(self.provider)
+        except SandboxViolation as exc:
+            broker.close()
+            return InvokeResult(
+                False,
+                self.provider,
+                2,
+                False,
+                str(req.log_out),
+                [],
+                message=f"sandbox_fail_closed: {exc}",
+                broker_session_id=broker.session_id,
+                allowed_tools=tuple(sorted(allowed)),
+            )
         argv = self.build_argv(req)
         _assert_no_forbidden_flags(argv)
         req.log_out.parent.mkdir(parents=True, exist_ok=True)
-        env = os.environ.copy()
-        if req.extra_env:
-            # Strip any attempt by callers/agents to inject broader tool grants.
-            sanitized = {
-                k: str(v)
-                for k, v in req.extra_env.items()
-                if k not in {"JOBOPS_ALLOWED_TOOLS", "JOBOPS_AGENT_ROLE", "JOBOPS_CAPABILITY_TOKEN"}
-            }
-            env.update(sanitized)
-        env["JOBOPS_AGENT_ROLE"] = req.role
-        # Informational only — broker/token is the real gate for jobsOps tools.
-        env["JOBOPS_ALLOWED_TOOLS"] = ",".join(sorted(allowed))
-        env["JOBOPS_POLICY_VERSION"] = POLICY_VERSION
-        env["JOBOPS_BROKER_SESSION"] = broker.session_id
-        # Never place the raw capability token in the child environment.
-        env.pop("JOBOPS_CAPABILITY_TOKEN", None)
+        # Explicit minimal allowlist — never inherit evidence/approval/connector secrets.
+        env = build_agent_subprocess_env(
+            role=req.role,
+            allowed_tools=sorted(allowed),
+            broker_session_id=broker.session_id,
+            policy_version=POLICY_VERSION,
+            parent_env=os.environ,
+            extra=req.extra_env,
+            sandbox_mode=sandbox_mode,
+        )
+        try:
+            assert_env_has_no_secrets(env)
+        except PermissionError as exc:
+            broker.close()
+            return InvokeResult(
+                False,
+                self.provider,
+                2,
+                False,
+                str(req.log_out),
+                argv,
+                message=f"secret_env_leak_blocked: {exc}",
+                broker_session_id=broker.session_id,
+                allowed_tools=tuple(sorted(allowed)),
+            )
         # Explicit authorization boundary for submit role.
         if req.role == "frontier_submit":
             if os.environ.get("JOBOPS_ALLOW_SUBMIT", "0") != "1":
@@ -250,7 +284,8 @@ class AgentRuntime:
             with req.log_out.open("w", encoding="utf-8") as logf:
                 logf.write(
                     f"[agent_runtime] broker_session={broker.session_id} "
-                    f"tools={','.join(sorted(allowed))} enforcement=tool_broker\n"
+                    f"tools={','.join(sorted(allowed))} "
+                    f"enforcement=tool_broker+minimal_env sandbox={sandbox_mode}\n"
                 )
                 proc = subprocess.Popen(
                     argv,
