@@ -13,6 +13,7 @@ python -m pip install -e ".[dev]"
 jobops init
 jobops doctor
 jobops run --workflow discovery --dry-run
+# --dry-run disables external submit/outreach; local ledger/handoff may still update
 jobops report
 ```
 

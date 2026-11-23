@@ -20,9 +20,38 @@ dev = ["pytest>=7.0"]
 [project.scripts]
 jobops = "jobops.cli:main"
 
+# Expose lib/*.py as top-level modules (agent_runtime, verify_jobs, ...) AND jobops package.
+[tool.setuptools.package-dir]
+"" = "lib"
+"jobops" = "jobops"
+
+[tool.setuptools]
+py-modules = [
+  "agent_runtime",
+  "build_exclusion_index",
+  "build_worker_prompts",
+  "contracts",
+  "drive_artifacts",
+  "inbox_outcomes",
+  "learning_proposals",
+  "ledger",
+  "merge_shards",
+  "outreach_drafts",
+  "policy",
+  "rank_opportunities",
+  "run_context",
+  "run_report",
+  "sheets_sync",
+  "submission_authorize",
+  "url_safety",
+  "user_workspace",
+  "validate_handoff_state",
+  "verify_jobs",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["jobops*", "lib*"]
+include = ["jobops*"]
 
 [tool.setuptools.package-data]
 jobops = ["py.typed"]

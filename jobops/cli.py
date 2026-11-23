@@ -186,6 +186,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         env["SUBMIT_AGENT"] = "0"
         env["JOBOPS_ALLOW_SUBMIT"] = "0"
         env["JOBOPS_ENABLE_LIVE_SUBMIT"] = "0"
+        env["JOBOPS_ENABLE_OUTREACH_SEND"] = "0"
+        env["JOBOPS_DRY_RUN"] = "1"
     print(
         json.dumps(
             {
@@ -193,6 +195,11 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "invoking": cmd,
                 "workflow": args.workflow,
                 "dry_run": bool(args.dry_run),
+                "dry_run_semantics": (
+                    "external_submit_and_outreach_disabled; local_state_may_mutate"
+                    if args.dry_run
+                    else "full_workflow_subject_to_env_gates"
+                ),
                 "submit_enabled": env.get("JOBOPS_ALLOW_SUBMIT") == "1"
                 and env.get("JOBOPS_ENABLE_LIVE_SUBMIT") == "1",
             },
@@ -230,7 +237,16 @@ def build_parser() -> argparse.ArgumentParser:
         default="daily-search",
         choices=["discovery", "daily-search", "pipeline", "applications", "inbox-reconcile"],
     )
-    p_run.add_argument("--dry-run", action="store_true")
+    p_run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Disable external submit/outreach (JOBOPS_ALLOW_SUBMIT=0, "
+            "JOBOPS_ENABLE_LIVE_SUBMIT=0, SUBMIT_AGENT=0). "
+            "Local ledger/handoff/report artifacts may still be written — "
+            "not a fully non-mutating rehearsal."
+        ),
+    )
     p_run.add_argument("--pipeline-only", action="store_true")
     p_run.add_argument("--inbox", default="")
     p_run.add_argument("--workspace", default="")

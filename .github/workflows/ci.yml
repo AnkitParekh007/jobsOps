@@ -46,14 +46,27 @@ jobs:
           JOBOPS_RUNTIME: deterministic
         run: python -m pytest -q
       - name: CLI smoke
-        env:
-          # lib/ modules (agent_runtime, etc.) are path-imported, not a top-level package.
-          PYTHONPATH: lib
         run: |
           python -m jobops.cli doctor || true
           python -m jobops.cli init --workspace "$RUNNER_TEMP/jobops-home" --name "Alex Candidate" --countries "Remote"
           python -m jobops.cli doctor --workspace "$RUNNER_TEMP/jobops-home"
-          python -c "from agent_runtime import detect_all, FORBIDDEN_FLAGS; assert '--force' in FORBIDDEN_FLAGS and '--trust' in FORBIDDEN_FLAGS; print('runtime_ok', len(detect_all()))"
+          # agent_runtime must import after editable install (py-modules from lib/).
+          python - <<'PY'
+          from agent_runtime import (
+              FORBIDDEN_FLAGS,
+              detect_all,
+              resolve_allowed_tools,
+              ToolPermissionError,
+          )
+          assert "--force" in FORBIDDEN_FLAGS and "--trust" in FORBIDDEN_FLAGS
+          assert "browser" not in resolve_allowed_tools("discovery")
+          try:
+              resolve_allowed_tools("discovery", ["submit"])
+              raise SystemExit("discovery must not resolve submit")
+          except ToolPermissionError:
+              pass
+          print("runtime_ok", len(detect_all()))
+          PY
 
   lint-security:
     name: lint + security

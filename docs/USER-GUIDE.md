@@ -11,6 +11,9 @@
 5. Configure required public sources, and optional email/Sheets/Drive/calendar/browser integrations.
 6. Choose research-only, prepare-for-review (default), or separately authorized controlled submission; set quota and consent restrictions.
 7. Run `jobops doctor`, then `jobops run --workflow discovery --dry-run`.
+   **Dry-run semantics:** disables external submit/outreach (`JOBOPS_ALLOW_SUBMIT=0`,
+   `JOBOPS_ENABLE_LIVE_SUBMIT=0`, `SUBMIT_AGENT=0`). Local ledger, handoff-state, and
+   report files may still be written — it is not a fully non-mutating rehearsal.
 8. Run `jobops run --workflow daily-search`; inspect `jobops report`, approvals and evidence.
 9. Optionally enable scheduling or supported event watchers. Verify a run persisted on restart.
 
