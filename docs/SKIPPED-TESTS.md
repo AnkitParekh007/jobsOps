@@ -24,8 +24,8 @@ Pytest may skip provider adapter smokes when a CLI binary is not on `PATH`. Skip
 | Minimal agent env | `lib/trust_boundary.build_agent_subprocess_env` | — |
 | Fail-closed unsandboxed CLIs | default refuse; sensitive roles never opt-in; others need `JOBOPS_ALLOW_UNSANDBOXED_AGENT=1` | Verified vendor sandbox APIs |
 | Evidence HMAC + approvals | Fail-closed secret; `SessionIssuer` + `ApprovalController`; `ControlPlaneController` grants | Hardware-backed key store / HSM |
-| Trusted sessions | Stored single-use sessions bound to pending approval | SSO / WebAuthn |
-| Orchestrator authority | Signed grants; clearing `JOBOPS_AGENT_ROLE` cannot mint | Separate privileged daemon / TEE |
+| Trusted sessions | Interactive challenge receipts + stored single-use sessions | SSO / WebAuthn |
+| Orchestrator authority | Signed grants + OS privilege credential; env alone insufficient | Separate privileged daemon / TEE |
 | PDF live validation | Recompute + magic + reject fixtures; `pdf_fixture` ordered extract | Full ATS visual QA |
 | SSRF / DNS rebinding | Validate + pin IP + peer check | Dedicated egress proxy |
 | Atomic daily reservations | Required before authorize; consume / uncertain lifecycle; cross-process tests | Multi-host distributed lock service |
