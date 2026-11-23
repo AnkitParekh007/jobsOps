@@ -1475,6 +1475,43 @@ def authorize_submission(
                 "reservation_unavailable",
                 "orchestrator_required",
             )
+        blocked_ident, ident_reason = ledger.has_blocking_application_identity(jk)
+        if blocked_ident:
+            blocking.append(f"application_identity:{ident_reason}")
+            uncertain = ident_reason.endswith("uncertain")
+            pkg = build_application_package(
+                job_key=jk,
+                canonical_url=canon,
+                run_id=run_id,
+                state=STATE_UNCERTAIN if uncertain else STATE_READY_FOR_APPROVAL,
+                ats_score=ats,
+                quality_score=quality,
+                pdf_fingerprint=fingerprint,
+                fingerprint_method=method,
+                checklist=checklist,
+                blocking_reasons=blocking,
+                organization=str(package_input.get("organization") or ""),
+                role=str(package_input.get("role") or ""),
+                pdf_path=str(pdf_path) if pdf_path else None,
+                ats_score_fingerprint=ats_fp_s,
+                quality_score_fingerprint=qual_fp_s,
+                extracted_text=extracted,
+                session_lock=lock_info,
+                daily_cap=daily_cap_info,
+                evidence_package=evidence,
+                notes="permanent application-identity guard — blocked across dates/runs",
+                retryable=False,
+                policy_version=policy_version,
+            )
+            return AuthorizeResult(
+                False,
+                STATE_UNCERTAIN if uncertain else STATE_READY_FOR_APPROVAL,
+                SOP_STATUS_MAP[STATE_UNCERTAIN if uncertain else STATE_READY_FOR_APPROVAL],
+                pkg,
+                blocking,
+                "application_identity" if not uncertain else "submission_uncertain",
+                ident_reason,
+            )
         if ledger.has_uncertain_reservation(job_key=jk):
             blocking.append("submission_reservation:job_uncertain_no_retry")
             pkg = build_application_package(

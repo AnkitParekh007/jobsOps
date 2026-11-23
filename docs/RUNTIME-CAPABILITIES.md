@@ -19,9 +19,10 @@
   - Fail closed when third-party CLI restrictions cannot be verified; **sensitive roles (`frontier_submit`, `outreach`) never allow unsandboxed opt-in**
   - Privileged tools only for `frontier_submit`; submit kill switches
   - `ControlPlaneController` signed `AuthorityGrant` required for `OrchestratorContext`
-  - Stored single-use `UserSession` via `SessionIssuer` (bound to principal + pending approval; explicit user action)
-  - HMAC evidence + durable approvals
-  - Atomic `submission_reservations` **required** before every successful non-dry-run authorization; consume on Applied/Submitted; `uncertain` blocks retry
+  - Interactive `InteractiveApprovalGate` → MAC'd `ConfirmationReceipt` → stored single-use `UserSession` (TTY challenge; model code cannot fabricate)
+  - Control plane requires OS-openable `secrets/control_plane.privilege` (mode 0600) — env flag alone fails closed
+  - HMAC evidence + durable approvals; approve bind/consume/decide is atomic (`BEGIN IMMEDIATE`)
+  - Permanent `application_identities` guard across dates/runs; atomic `submission_reservations` **required** before authorize; consume on Applied/Submitted; `uncertain` blocks retry
   - Cross-process SQLite reservation / daily-cap serialization (`BEGIN IMMEDIATE`)
   - SSRF pin on `url_safety.safe_http_fetch` (sole outbound HTTP policy)
 - **Informational only:** `JOBOPS_ALLOWED_TOOLS` env and `[jobops-tool-allowlist …]` prompt headers. Child CLIs may ignore them; jobsOps must not dispatch tools except through the broker/sandbox.
@@ -32,8 +33,8 @@
 |---|---|---|
 | Minimal agent env allowlist | yes (strips home/path/control-plane) | — |
 | Broker + sandbox tool FS/network/process gates | yes (jobsOps-mediated) | OS seccomp/container for vendor CLIs |
-| Trusted session issuer + stored single-use sessions | yes | Rich UI approval inbox / SSO / WebAuthn |
-| Protected control-plane authority issuer | yes (`ControlPlaneController` + signed grants) | HSM / hardware key store / separate privileged daemon |
+| Trusted session issuer + stored single-use sessions | yes (`InteractiveApprovalGate` + MAC receipts) | Rich UI approval inbox / SSO / WebAuthn |
+| Protected control-plane authority issuer | yes (`ControlPlaneController` + OS privilege credential) | HSM / hardware key store / separate privileged daemon |
 | Orchestrator-gated evidence issuance | yes | Hardware-backed isolation from same OS user |
 | Atomic daily submit reservations + consume/uncertain | yes | Distributed multi-host coordinator |
 | Unsandboxed AI blocked for sensitive workflows | yes | OS sandbox for discovery/rank CLIs |

@@ -32,6 +32,24 @@ def _repo_root() -> Path:
 
 def cmd_init(args: argparse.Namespace) -> int:
     paths = ensure_workspace(Path(args.workspace) if args.workspace else None)
+    # Install OS-gated control-plane privilege when explicitly enabled.
+    if os.environ.get("JOBOPS_CONTROL_PLANE", "0") == "1":
+        from authority import install_control_plane_privilege
+
+        try:
+            install_control_plane_privilege(paths["home"])
+        except Exception as exc:  # noqa: BLE001 — surface to operator JSON
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": f"control_plane_privilege_install_failed:{exc}",
+                        "home": str(paths["home"]),
+                    },
+                    indent=2,
+                )
+            )
+            return 2
     existing = paths["profile"]
     if existing.is_file() and not args.force:
         print(json.dumps({"ok": True, "already_initialized": True, "home": str(paths["home"])}, indent=2))
@@ -245,6 +263,56 @@ def cmd_run(args: argparse.Namespace) -> int:
     return subprocess.call(cmd, cwd=str(ROOT), env=env)
 
 
+def cmd_approve(args: argparse.Namespace) -> int:
+    """Interactive approval: TTY challenge confirm → atomic approve (no model self-approve)."""
+    from approval_controller import ApprovalController, TtyConfirmationChannel
+    from authority import install_control_plane_privilege, reset_control_plane_for_tests
+    from ledger import Ledger
+    from trust_boundary import open_orchestrator
+    from user_workspace import default_jobops_home
+
+    home = Path(args.workspace).expanduser() if args.workspace else default_jobops_home()
+    os.environ.setdefault("JOBOPS_CONTROL_PLANE", "1")
+    os.environ.pop("JOBOPS_AGENT_ROLE", None)
+    reset_control_plane_for_tests()
+    try:
+        install_control_plane_privilege(home)
+    except Exception as exc:  # noqa: BLE001
+        print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
+        return 2
+    db = home / "state" / "jobops.db"
+    led = Ledger(db)
+    try:
+        with open_orchestrator(home, principal=args.principal):
+            ctl = ApprovalController(led, workspace_home=home)
+            decided = ctl.interactive_approve(
+                approval_id=args.approval_id,
+                principal=args.principal,
+                expected_job_key=args.job_key,
+                expected_session_id=args.session_id,
+                expected_fingerprint=args.fingerprint,
+                channel=TtyConfirmationChannel(),
+                workspace_home=home,
+            )
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "approval_id": decided["approval_id"],
+                    "status": decided["status"],
+                    "decided_by": decided["decided_by"],
+                },
+                indent=2,
+            )
+        )
+        return 0
+    except Exception as exc:  # noqa: BLE001
+        print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
+        return 1
+    finally:
+        led.close()
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="jobops", description="jobsOps portable CLI")
     sub = ap.add_subparsers(dest="command", required=True)
@@ -257,6 +325,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument("--countries", default="")
     p_init.add_argument("--force", action="store_true")
     p_init.set_defaults(func=cmd_init)
+
+    p_appr = sub.add_parser(
+        "approve",
+        help="Interactively confirm and approve a pending approval (TTY required)",
+    )
+    p_appr.add_argument("--approval-id", required=True)
+    p_appr.add_argument("--principal", required=True)
+    p_appr.add_argument("--job-key", required=True)
+    p_appr.add_argument("--session-id", required=True)
+    p_appr.add_argument("--fingerprint", required=True)
+    p_appr.add_argument("--workspace", default="")
+    p_appr.set_defaults(func=cmd_approve)
 
     p_doc = sub.add_parser("doctor", help="Check workspace, runtimes, and defaults")
     p_doc.add_argument("--workspace", default="")

@@ -143,6 +143,29 @@ CREATE TABLE IF NOT EXISTS submission_reservations (
   UNIQUE(job_key, submit_date)
 );
 
+CREATE TABLE IF NOT EXISTS confirmation_receipts (
+  receipt_id TEXT PRIMARY KEY,
+  approval_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  challenge_hash TEXT NOT NULL,
+  action TEXT NOT NULL,
+  confirmed_at TEXT NOT NULL,
+  consumed_at TEXT,
+  mac TEXT NOT NULL,
+  meta_json TEXT NOT NULL DEFAULT '{}',
+  FOREIGN KEY (approval_id) REFERENCES approvals(approval_id)
+);
+
+CREATE TABLE IF NOT EXISTS application_identities (
+  identity_key TEXT PRIMARY KEY,
+  job_key TEXT NOT NULL UNIQUE,
+  outcome TEXT NOT NULL,
+  reservation_id TEXT,
+  run_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_artifacts_run ON artifacts(run_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_job ON artifacts(job_key);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
@@ -151,6 +174,8 @@ CREATE INDEX IF NOT EXISTS idx_approvals_job ON approvals(job_key, status);
 CREATE INDEX IF NOT EXISTS idx_approvals_user ON approvals(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_reservations_date ON submission_reservations(submit_date, state);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_approval ON user_sessions(approval_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_confirmation_approval ON confirmation_receipts(approval_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_application_identities_outcome ON application_identities(outcome);
 """
 
 
@@ -186,6 +211,36 @@ class Ledger:
             self._conn.execute(
                 "ALTER TABLE submission_reservations ADD COLUMN updated_at TEXT"
             )
+        # Ensure newer tables exist on older DBs (CREATE IF NOT EXISTS in SCHEMA_SQL
+        # already runs; this is a no-op safety for partial upgrades).
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS confirmation_receipts (
+              receipt_id TEXT PRIMARY KEY,
+              approval_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              challenge_hash TEXT NOT NULL,
+              action TEXT NOT NULL,
+              confirmed_at TEXT NOT NULL,
+              consumed_at TEXT,
+              mac TEXT NOT NULL,
+              meta_json TEXT NOT NULL DEFAULT '{}'
+            )
+            """
+        )
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS application_identities (
+              identity_key TEXT PRIMARY KEY,
+              job_key TEXT NOT NULL UNIQUE,
+              outcome TEXT NOT NULL,
+              reservation_id TEXT,
+              run_id TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT
+            )
+            """
+        )
 
     def close(self) -> None:
         self._conn.close()
@@ -646,6 +701,441 @@ class Ledger:
             )
         return True
 
+    def store_confirmation_receipt(
+        self,
+        *,
+        receipt_id: str,
+        approval_id: str,
+        user_id: str,
+        challenge_hash: str,
+        action: str,
+        confirmed_at: str,
+        mac: str,
+        meta: Optional[Mapping[str, Any]] = None,
+    ) -> str:
+        from trust_boundary import require_orchestrator
+
+        require_orchestrator("approve")
+        with self.transaction():
+            self._conn.execute(
+                """
+                INSERT INTO confirmation_receipts(
+                  receipt_id, approval_id, user_id, challenge_hash, action,
+                  confirmed_at, consumed_at, mac, meta_json
+                ) VALUES (?,?,?,?,?,?,NULL,?,?)
+                """,
+                (
+                    receipt_id,
+                    approval_id,
+                    user_id,
+                    challenge_hash,
+                    action,
+                    confirmed_at,
+                    mac,
+                    json.dumps(meta or {}, ensure_ascii=False),
+                ),
+            )
+            self._conn.execute(
+                "INSERT INTO audit_events(created_at, run_id, kind, detail_json) VALUES (?,?,?,?)",
+                (
+                    confirmed_at,
+                    None,
+                    "confirmation_receipt_stored",
+                    json.dumps(
+                        {
+                            "receipt_id": receipt_id,
+                            "approval_id": approval_id,
+                            "user_id": user_id,
+                            "action": action,
+                        },
+                        ensure_ascii=False,
+                    ),
+                ),
+            )
+        return receipt_id
+
+    def get_confirmation_receipt(self, receipt_id: str) -> Optional[dict[str, Any]]:
+        row = self._conn.execute(
+            "SELECT * FROM confirmation_receipts WHERE receipt_id=?",
+            (receipt_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "receipt_id": row["receipt_id"],
+            "approval_id": row["approval_id"],
+            "user_id": row["user_id"],
+            "challenge_hash": row["challenge_hash"],
+            "action": row["action"],
+            "confirmed_at": row["confirmed_at"],
+            "consumed_at": row["consumed_at"],
+            "mac": row["mac"],
+            "meta": json.loads(row["meta_json"] or "{}"),
+        }
+
+    def consume_confirmation_receipt(self, receipt_id: str) -> bool:
+        from trust_boundary import require_orchestrator
+
+        require_orchestrator("approve")
+        now = _now()
+        with self.transaction():
+            cur = self._conn.execute(
+                """
+                UPDATE confirmation_receipts SET consumed_at=?
+                WHERE receipt_id=? AND consumed_at IS NULL
+                """,
+                (now, receipt_id),
+            )
+            if cur.rowcount != 1:
+                return False
+            self._conn.execute(
+                "INSERT INTO audit_events(created_at, run_id, kind, detail_json) VALUES (?,?,?,?)",
+                (
+                    now,
+                    None,
+                    "confirmation_receipt_consumed",
+                    json.dumps({"receipt_id": receipt_id}, ensure_ascii=False),
+                ),
+            )
+        return True
+
+    @staticmethod
+    def application_identity_key(job_key: str) -> str:
+        return f"appid:{job_key}"
+
+    def get_application_identity(self, job_key: str) -> Optional[dict[str, Any]]:
+        row = self._conn.execute(
+            "SELECT * FROM application_identities WHERE job_key=?",
+            (job_key,),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "identity_key": row["identity_key"],
+            "job_key": row["job_key"],
+            "outcome": row["outcome"],
+            "reservation_id": row["reservation_id"],
+            "run_id": row["run_id"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def has_blocking_application_identity(self, job_key: str) -> tuple[bool, str]:
+        """Permanent guard: consumed/uncertain/applied identities block across dates/runs."""
+        row = self.get_application_identity(job_key)
+        if row is None:
+            return False, ""
+        if row["outcome"] in {"consumed", "uncertain", "applied"}:
+            return True, f"application_identity_{row['outcome']}"
+        return False, ""
+
+    def upsert_application_identity(
+        self,
+        *,
+        job_key: str,
+        outcome: str,
+        reservation_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+        conn: Optional[sqlite3.Connection] = None,
+    ) -> None:
+        if outcome not in {"consumed", "uncertain", "applied", "reserved"}:
+            raise ValueError(f"invalid_application_identity_outcome:{outcome}")
+        now = _now()
+        identity_key = self.application_identity_key(job_key)
+        target = conn or self._conn
+        existing = target.execute(
+            "SELECT outcome FROM application_identities WHERE job_key=?",
+            (job_key,),
+        ).fetchone()
+        if existing:
+            # Never downgrade terminal outcomes.
+            if existing["outcome"] in {"consumed", "uncertain", "applied"} and outcome == "reserved":
+                return
+            target.execute(
+                """
+                UPDATE application_identities
+                SET outcome=?, reservation_id=?, run_id=?, updated_at=?
+                WHERE job_key=?
+                """,
+                (outcome, reservation_id, run_id, now, job_key),
+            )
+        else:
+            target.execute(
+                """
+                INSERT INTO application_identities(
+                  identity_key, job_key, outcome, reservation_id, run_id, created_at
+                ) VALUES (?,?,?,?,?,?)
+                """,
+                (identity_key, job_key, outcome, reservation_id, run_id, now),
+            )
+
+    def atomic_approve_with_session(
+        self,
+        *,
+        approval_id: str,
+        user_id: str,
+        session_id: str,
+        session_token: str,
+        expected_job_key: str,
+        expected_session_id: str,
+        expected_fingerprint: str,
+        auth_method: str = "",
+        session_fp: str = "",
+        confirmation_receipt_id: str = "",
+    ) -> dict[str, Any]:
+        """
+        Atomically validate bindings, consume the user session, and approve.
+
+        Uses BEGIN IMMEDIATE so concurrent approvers cannot split consume/decide.
+        """
+        import hashlib
+        import hmac as hmac_mod
+        from trust_boundary import require_orchestrator
+
+        require_orchestrator("approve")
+        token_hash = hashlib.sha256(session_token.encode("utf-8")).hexdigest()
+        now = _now()
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            row = self._conn.execute(
+                "SELECT * FROM approvals WHERE approval_id=?",
+                (approval_id,),
+            ).fetchone()
+            if row is None:
+                self._conn.rollback()
+                raise KeyError(f"approval_not_found:{approval_id}")
+            if row["status"] != "pending":
+                self._conn.rollback()
+                raise PermissionError(f"approval_not_pending:{row['status']}")
+            if row["expires_at"]:
+                # Soft parse — invalid expiry fails closed.
+                try:
+                    text = str(row["expires_at"]).strip()
+                    if text.endswith("Z"):
+                        text = text[:-1] + "+00:00"
+                    from datetime import datetime, timezone
+
+                    if datetime.fromisoformat(text).astimezone(timezone.utc) <= datetime.now(
+                        timezone.utc
+                    ):
+                        self._conn.rollback()
+                        raise PermissionError("approval_expired")
+                except ValueError:
+                    self._conn.rollback()
+                    raise PermissionError("approval_expiry_invalid") from None
+            if row["user_id"] != user_id:
+                self._conn.rollback()
+                raise PermissionError("user_session_user_mismatch")
+            if row["job_key"] != expected_job_key:
+                self._conn.rollback()
+                raise PermissionError("approval_job_mismatch")
+            if row["session_id"] != expected_session_id:
+                self._conn.rollback()
+                raise PermissionError("approval_session_mismatch")
+            if row["artifact_fingerprint"] != expected_fingerprint:
+                self._conn.rollback()
+                raise PermissionError("approval_fingerprint_mismatch")
+
+            sess = self._conn.execute(
+                "SELECT * FROM user_sessions WHERE session_id=?",
+                (session_id,),
+            ).fetchone()
+            if sess is None:
+                self._conn.rollback()
+                raise PermissionError("user_session_not_found")
+            if sess["user_id"] != user_id or sess["approval_id"] != approval_id:
+                self._conn.rollback()
+                raise PermissionError("user_session_user_mismatch")
+            if sess["consumed_at"]:
+                self._conn.rollback()
+                raise PermissionError("user_session_already_consumed")
+            try:
+                text = str(sess["expires_at"]).strip()
+                if text.endswith("Z"):
+                    text = text[:-1] + "+00:00"
+                from datetime import datetime, timezone
+
+                if datetime.fromisoformat(text).astimezone(timezone.utc) <= datetime.now(
+                    timezone.utc
+                ):
+                    self._conn.rollback()
+                    raise PermissionError("user_session_expired")
+            except ValueError:
+                self._conn.rollback()
+                raise PermissionError("user_session_expiry_invalid") from None
+            if not hmac_mod.compare_digest(str(sess["token_hash"]), token_hash):
+                self._conn.rollback()
+                raise PermissionError("user_session_token_mismatch")
+
+            cur = self._conn.execute(
+                """
+                UPDATE user_sessions SET consumed_at=?
+                WHERE session_id=? AND consumed_at IS NULL
+                """,
+                (now, session_id),
+            )
+            if cur.rowcount != 1:
+                self._conn.rollback()
+                raise PermissionError("user_session_consume_failed")
+
+            meta = json.loads(row["meta_json"] or "{}")
+            if auth_method:
+                meta["auth_method"] = auth_method
+            if session_fp:
+                meta["session_fp"] = session_fp
+            meta["approval_session_id"] = session_id
+            if confirmation_receipt_id:
+                meta["confirmation_receipt_id"] = confirmation_receipt_id
+            decided_by = f"user:{user_id}"
+            cur2 = self._conn.execute(
+                """
+                UPDATE approvals
+                SET status=?, decided_at=?, decided_by=?, meta_json=?
+                WHERE approval_id=? AND status='pending'
+                """,
+                (
+                    "approved",
+                    now,
+                    decided_by,
+                    json.dumps(meta, ensure_ascii=False),
+                    approval_id,
+                ),
+            )
+            if cur2.rowcount != 1:
+                self._conn.rollback()
+                raise PermissionError("approval_decide_failed")
+            self._conn.execute(
+                "INSERT INTO audit_events(created_at, run_id, kind, detail_json) VALUES (?,?,?,?)",
+                (
+                    now,
+                    row["run_id"],
+                    "approval_decided_atomic",
+                    json.dumps(
+                        {
+                            "approval_id": approval_id,
+                            "status": "approved",
+                            "decided_by": decided_by,
+                            "session_id": session_id,
+                        },
+                        ensure_ascii=False,
+                    ),
+                ),
+            )
+            self._conn.commit()
+        except Exception:
+            try:
+                self._conn.rollback()
+            except sqlite3.Error:
+                pass
+            raise
+        decided = self.get_approval(approval_id)
+        assert decided is not None
+        return decided
+
+    def atomic_revoke_with_session(
+        self,
+        *,
+        approval_id: str,
+        user_id: str,
+        session_id: str,
+        session_token: str,
+        reason: str = "",
+        auth_method: str = "",
+        session_fp: str = "",
+    ) -> dict[str, Any]:
+        import hashlib
+        import hmac as hmac_mod
+        from trust_boundary import require_orchestrator
+
+        require_orchestrator("approve")
+        token_hash = hashlib.sha256(session_token.encode("utf-8")).hexdigest()
+        now = _now()
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+            row = self._conn.execute(
+                "SELECT * FROM approvals WHERE approval_id=?",
+                (approval_id,),
+            ).fetchone()
+            if row is None:
+                self._conn.rollback()
+                raise KeyError(f"approval_not_found:{approval_id}")
+            if row["status"] not in {"pending", "approved"}:
+                self._conn.rollback()
+                raise PermissionError(f"approval_not_revocable:{row['status']}")
+            if row["user_id"] != user_id:
+                self._conn.rollback()
+                raise PermissionError("user_session_user_mismatch")
+            sess = self._conn.execute(
+                "SELECT * FROM user_sessions WHERE session_id=?",
+                (session_id,),
+            ).fetchone()
+            if sess is None:
+                self._conn.rollback()
+                raise PermissionError("user_session_not_found")
+            if sess["consumed_at"]:
+                self._conn.rollback()
+                raise PermissionError("user_session_already_consumed")
+            if not hmac_mod.compare_digest(str(sess["token_hash"]), token_hash):
+                self._conn.rollback()
+                raise PermissionError("user_session_token_mismatch")
+            if sess["approval_id"] != approval_id or sess["user_id"] != user_id:
+                self._conn.rollback()
+                raise PermissionError("user_session_user_mismatch")
+            cur = self._conn.execute(
+                """
+                UPDATE user_sessions SET consumed_at=?
+                WHERE session_id=? AND consumed_at IS NULL
+                """,
+                (now, session_id),
+            )
+            if cur.rowcount != 1:
+                self._conn.rollback()
+                raise PermissionError("user_session_consume_failed")
+            meta = json.loads(row["meta_json"] or "{}")
+            if reason:
+                meta["revoke_reason"] = reason
+            if auth_method:
+                meta["auth_method"] = auth_method
+            if session_fp:
+                meta["session_fp"] = session_fp
+            decided_by = f"user:{user_id}"
+            self._conn.execute(
+                """
+                UPDATE approvals
+                SET status=?, decided_at=?, decided_by=?, meta_json=?
+                WHERE approval_id=?
+                """,
+                (
+                    "revoked",
+                    now,
+                    decided_by,
+                    json.dumps(meta, ensure_ascii=False),
+                    approval_id,
+                ),
+            )
+            self._conn.execute(
+                "INSERT INTO audit_events(created_at, run_id, kind, detail_json) VALUES (?,?,?,?)",
+                (
+                    now,
+                    row["run_id"],
+                    "approval_revoked_atomic",
+                    json.dumps(
+                        {"approval_id": approval_id, "decided_by": decided_by},
+                        ensure_ascii=False,
+                    ),
+                ),
+            )
+            self._conn.commit()
+        except Exception:
+            try:
+                self._conn.rollback()
+            except sqlite3.Error:
+                pass
+            raise
+        decided = self.get_approval(approval_id)
+        assert decided is not None
+        return decided
+
     def require_approved(
         self,
         approval_id: str,
@@ -707,6 +1197,44 @@ class Ledger:
         require_orchestrator("reserve_submit")
         try:
             self._conn.execute("BEGIN IMMEDIATE")
+            # Permanent application-identity guard (cross-date / cross-run).
+            ident = self._conn.execute(
+                "SELECT outcome, reservation_id FROM application_identities WHERE job_key=?",
+                (job_key,),
+            ).fetchone()
+            if ident and ident["outcome"] in {"consumed", "uncertain", "applied"}:
+                self._conn.rollback()
+                return (
+                    False,
+                    f"application_identity_{ident['outcome']}",
+                    str(ident["reservation_id"]) if ident["reservation_id"] else None,
+                )
+            # Also block if any prior uncertain reservation exists on any date.
+            prior_uncertain = self._conn.execute(
+                """
+                SELECT reservation_id FROM submission_reservations
+                WHERE job_key=? AND state='uncertain' LIMIT 1
+                """,
+                (job_key,),
+            ).fetchone()
+            if prior_uncertain:
+                self._conn.rollback()
+                return False, "job_uncertain_no_retry", str(prior_uncertain["reservation_id"])
+            # Block re-reserve when a prior day already consumed this job identity.
+            prior_consumed = self._conn.execute(
+                """
+                SELECT reservation_id FROM submission_reservations
+                WHERE job_key=? AND state='consumed' LIMIT 1
+                """,
+                (job_key,),
+            ).fetchone()
+            if prior_consumed:
+                self._conn.rollback()
+                return (
+                    False,
+                    "application_identity_consumed",
+                    str(prior_consumed["reservation_id"]),
+                )
             existing = self._conn.execute(
                 """
                 SELECT reservation_id, state, run_id FROM submission_reservations
@@ -768,6 +1296,13 @@ class Ledger:
                         ensure_ascii=False,
                     ),
                 ),
+            )
+            self.upsert_application_identity(
+                job_key=job_key,
+                outcome="reserved",
+                reservation_id=reservation_id,
+                run_id=run_id,
+                conn=self._conn,
             )
             self._conn.commit()
             return True, "reserved", reservation_id
@@ -831,6 +1366,13 @@ class Ledger:
             )
             if cur.rowcount != 1:
                 raise PermissionError("reservation_consume_failed")
+            self.upsert_application_identity(
+                job_key=row["job_key"],
+                outcome="consumed",
+                reservation_id=reservation_id,
+                run_id=run_id or row["run_id"],
+                conn=self._conn,
+            )
             self._conn.execute(
                 "INSERT INTO audit_events(created_at, run_id, kind, detail_json) VALUES (?,?,?,?)",
                 (
@@ -927,6 +1469,13 @@ class Ledger:
                 WHERE reservation_id=?
                 """,
                 (now, reservation_id),
+            )
+            self.upsert_application_identity(
+                job_key=row["job_key"],
+                outcome="uncertain",
+                reservation_id=reservation_id,
+                run_id=run_id or row["run_id"],
+                conn=self._conn,
             )
             self._conn.execute(
                 "INSERT INTO audit_events(created_at, run_id, kind, detail_json) VALUES (?,?,?,?)",

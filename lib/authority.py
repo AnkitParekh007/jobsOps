@@ -26,6 +26,8 @@ from trust_boundary import (
 )
 
 AUTHORITY_KEY_NAME = "orchestrator_authority.key"
+PRIVILEGE_NAME = "control_plane.privilege"
+CONFIRMATION_KEY_NAME = "confirmation_hmac.key"
 DEFAULT_GRANT_TTL_SEC = 3600
 DEFAULT_SCOPES = frozenset(
     {"approve", "issue_evidence", "reserve_submit", "record_approval"}
@@ -94,6 +96,21 @@ def authority_key_path(workspace_home: Path) -> Path:
     return Path(workspace_home).expanduser().resolve() / "secrets" / AUTHORITY_KEY_NAME
 
 
+def privilege_path(workspace_home: Path) -> Path:
+    return Path(workspace_home).expanduser().resolve() / "secrets" / PRIVILEGE_NAME
+
+
+def confirmation_key_path(workspace_home: Path) -> Path:
+    return (
+        Path(workspace_home).expanduser().resolve() / "secrets" / CONFIRMATION_KEY_NAME
+    )
+
+
+def approvals_storage_path(workspace_home: Path) -> Path:
+    """Durable approval / session DB directory — must stay mode 0700."""
+    return Path(workspace_home).expanduser().resolve() / "state"
+
+
 def workspace_fingerprint(workspace_home: Path) -> str:
     resolved = str(Path(workspace_home).expanduser().resolve())
     return hashlib.sha256(resolved.encode("utf-8")).hexdigest()[:32]
@@ -123,23 +140,119 @@ def _assert_private_file(path: Path) -> None:
         raise AuthorityError(f"authority_key_insecure_mode:{oct(mode)}")
 
 
-def load_or_create_authority_key(workspace_home: Path) -> bytes:
-    """Load the control-plane signing key; create mode-0600 if missing."""
+def _assert_private_dir(path: Path) -> None:
+    try:
+        mode = path.stat().st_mode & 0o777
+    except OSError as exc:
+        raise AuthorityError(f"control_plane_storage_unreadable:{exc}") from exc
+    if mode & 0o077:
+        raise AuthorityError(f"control_plane_storage_insecure_mode:{oct(mode)}")
+
+
+def install_control_plane_privilege(workspace_home: Path | str) -> Path:
+    """
+    Installer/CLI path: create the OS-permission-gated privilege credential.
+
+    ``JOBOPS_CONTROL_PLANE=1`` alone is not enough to bootstrap — this file must
+    exist and be openable by the process. Agent subprocesses never receive
+    ``JOBOPS_HOME``, so they cannot install or open it.
+    """
+    require_control_plane_enabled()
     home = Path(workspace_home).expanduser().resolve()
     secrets_dir = home / "secrets"
+    state_dir = approvals_storage_path(home)
     _chmod_private_dir(secrets_dir)
-    _chmod_private_dir(home / "state")
-    path = authority_key_path(home)
+    _chmod_private_dir(state_dir)
+    path = privilege_path(home)
     if not path.is_file():
-        key = secrets.token_bytes(32)
-        path.write_bytes(key)
+        fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        try:
+            os.write(fd, secrets.token_bytes(32))
+        finally:
+            os.close(fd)
         _chmod_private_file(path)
-        return key
+    else:
+        _assert_private_file(path)
+    # Prove OS-level open succeeds for this process.
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+        os.close(fd)
+    except OSError as exc:
+        raise AuthorityError(f"control_plane_privilege_denied:{exc}") from exc
+    return path
+
+
+def require_privileged_access(workspace_home: Path | str) -> Path:
+    """
+    Enforce OS permission boundary for control-plane secrets.
+
+    Rejects when the privilege credential is missing or unreadable — setting
+    ``JOBOPS_CONTROL_PLANE=1`` without privileged filesystem access fails closed.
+    """
+    require_control_plane_enabled()
+    home = Path(workspace_home).expanduser().resolve()
+    path = privilege_path(home)
+    if not path.is_file():
+        raise AuthorityError("control_plane_privilege_missing")
+    _assert_private_file(path)
+    state_dir = approvals_storage_path(home)
+    if state_dir.is_dir():
+        _assert_private_dir(state_dir)
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+        os.close(fd)
+    except OSError as exc:
+        raise AuthorityError(f"control_plane_privilege_denied:{exc}") from exc
+    return path
+
+
+def _load_or_create_secret_file(path: Path, *, too_short_code: str) -> bytes:
+    """Create a mode-0600 secret file or load an existing one (re-chmod on race)."""
+    if not path.is_file():
+        try:
+            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            try:
+                key = secrets.token_bytes(32)
+                os.write(fd, key)
+            finally:
+                os.close(fd)
+            _chmod_private_file(path)
+            return key
+        except FileExistsError:
+            # Lost create race — fall through to load path.
+            pass
+    # Repair insecure mode from concurrent writers / umask races, then assert.
+    _chmod_private_file(path)
     _assert_private_file(path)
     key = path.read_bytes()
     if len(key) < 16:
-        raise AuthorityError("authority_key_too_short")
+        raise AuthorityError(too_short_code)
     return key
+
+
+def load_or_create_authority_key(workspace_home: Path) -> bytes:
+    """Load the control-plane signing key; create mode-0600 if missing."""
+    home = Path(workspace_home).expanduser().resolve()
+    require_privileged_access(home)
+    secrets_dir = home / "secrets"
+    _chmod_private_dir(secrets_dir)
+    _chmod_private_dir(approvals_storage_path(home))
+    return _load_or_create_secret_file(
+        authority_key_path(home),
+        too_short_code="authority_key_too_short",
+    )
+
+
+def load_or_create_confirmation_key(workspace_home: Path) -> bytes:
+    """HMAC key for interactive confirmation receipts (privilege-gated)."""
+    home = Path(workspace_home).expanduser().resolve()
+    require_privileged_access(home)
+    secrets_dir = home / "secrets"
+    _chmod_private_dir(secrets_dir)
+    return _load_or_create_secret_file(
+        confirmation_key_path(home),
+        too_short_code="confirmation_key_too_short",
+    )
 
 
 def _signing_payload(
@@ -211,12 +324,18 @@ def bootstrap_control_plane(workspace_home: Path | str) -> ControlPlaneSeal:
     """
     Enter the protected control plane for this process.
 
-    Requires JOBOPS_CONTROL_PLANE=1 and refuses agent roles / contamination
-    (clearing JOBOPS_AGENT_ROLE does not enable the control plane).
+    Requires:
+    - ``JOBOPS_CONTROL_PLANE=1`` (never sufficient alone)
+    - OS-openable ``secrets/control_plane.privilege`` (mode 0600)
+    - Non-agent / non-contaminated process
+
+    Clearing ``JOBOPS_AGENT_ROLE`` does not enable the control plane.
     """
     require_control_plane_enabled()
     home = Path(workspace_home).expanduser().resolve()
+    require_privileged_access(home)
     load_or_create_authority_key(home)
+    load_or_create_confirmation_key(home)
     seal = ControlPlaneSeal(
         seal_id=secrets.token_hex(16),
         workspace_home=str(home),
@@ -248,6 +367,8 @@ class ControlPlaneController:
     ) -> None:
         require_control_plane_enabled()
         home = Path(workspace_home).expanduser().resolve()
+        # Privilege credential before seal — env flag alone must fail closed.
+        require_privileged_access(home)
         active = seal or current_control_plane_seal()
         if active is None:
             raise AuthorityError("control_plane_seal_required")
@@ -346,11 +467,14 @@ def issue_test_grant(
     ttl_sec: int = DEFAULT_GRANT_TTL_SEC,
 ) -> AuthorityGrant:
     """
-    Test/CLI helper: bootstrap (if needed) and issue a grant.
+    Test/CLI helper: ensure privilege credential, bootstrap (if needed), issue grant.
 
-    Still refuses agent roles and contaminated processes.
+    Still refuses agent roles and contaminated processes. ``bootstrap_control_plane``
+    itself never auto-creates the privilege file — only this helper / ``jobops init``
+    / ``install_control_plane_privilege`` may install it.
     """
     home = Path(workspace_home).expanduser().resolve()
+    install_control_plane_privilege(home)
     seal = current_control_plane_seal()
     if seal is None or Path(seal.workspace_home).resolve() != home:
         seal = bootstrap_control_plane(home)

@@ -68,9 +68,12 @@ def _worker_reserve(args: tuple) -> tuple[bool, str]:
     db, home, i, today = args
     import os
 
+    from authority import install_control_plane_privilege
+
     os.environ["JOBOPS_CONTROL_PLANE"] = "1"
     os.environ.pop("JOBOPS_AGENT_ROLE", None)
     reset_control_plane_for_tests()
+    install_control_plane_privilege(Path(home))
     led = Ledger(db)
     try:
         with open_orchestrator(Path(home), principal=f"proc-{i}"):
@@ -281,12 +284,15 @@ def _worker_authorize(args: tuple) -> bool:
     db, home, i = args
     import os
 
+    from authority import install_control_plane_privilege
+
     os.environ["JOBOPS_CONTROL_PLANE"] = "1"
     os.environ["JOBOPS_EVIDENCE_SECRET"] = SECRET.decode()
     os.environ["JOBOPS_ALLOW_SUBMIT"] = "1"
     os.environ["JOBOPS_ALLOW_FIXTURE_EVIDENCE"] = "1"
     os.environ.pop("JOBOPS_AGENT_ROLE", None)
     reset_control_plane_for_tests()
+    install_control_plane_privilege(Path(home))
 
     url = f"https://jobs.ashbyhq.com/acme/conc-{i}"
     job_key = f"url:{url}"
@@ -360,3 +366,37 @@ def test_cross_process_authorize_daily_cap(jobops_home: Path, monkeypatch):
         results = pool.map(_worker_authorize, [(db, home, i) for i in range(4)])
     assert sum(1 for r in results if r) == 1
     assert sum(1 for r in results if not r) == 3
+
+
+def test_permanent_application_identity_blocks_across_dates(
+    jobops_home: Path, monkeypatch
+):
+    """P1: consumed job identity cannot be reserved again on a later date/run."""
+    monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
+    led = Ledger(jobops_home / "state" / "ident.db")
+    led.start_run("id-1", floor=40)
+    with open_orchestrator(jobops_home, principal="pytest"):
+        ok, reason, rid = reserve_daily_submission(
+            led,
+            job_key="job:permanent",
+            run_id="id-1",
+            cap=5,
+            submit_date="2099-01-01",
+            reservation_id="res-id-1",
+        )
+        assert ok is True
+        led.consume_submission_reservation(rid, run_id="id-1", job_key="job:permanent")
+        blocked, why = led.has_blocking_application_identity("job:permanent")
+        assert blocked is True
+        assert "consumed" in why
+        ok2, reason2, _ = reserve_daily_submission(
+            led,
+            job_key="job:permanent",
+            run_id="id-2",
+            cap=5,
+            submit_date="2099-01-02",
+            reservation_id="res-id-2",
+        )
+        assert ok2 is False
+        assert "application_identity" in reason2 or "consumed" in reason2
+    led.close()

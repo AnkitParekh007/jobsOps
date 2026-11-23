@@ -44,15 +44,17 @@ def _jobops_test_security_defaults(monkeypatch, tmp_path_factory):
 
 @pytest.fixture
 def jobops_home(tmp_path, monkeypatch) -> Path:
-    """Private workspace home with authority key material for control-plane tests."""
+    """Private workspace home with privilege + authority key material for control-plane tests."""
     home = tmp_path / "jobops-home"
     home.mkdir()
     (home / "secrets").mkdir()
     (home / "state").mkdir()
     monkeypatch.setenv("JOBOPS_HOME", str(home))
-    from authority import reset_control_plane_for_tests
+    monkeypatch.setenv("JOBOPS_CONTROL_PLANE", "1")
+    from authority import install_control_plane_privilege, reset_control_plane_for_tests
 
     reset_control_plane_for_tests()
+    install_control_plane_privilege(home)
     return home
 
 
@@ -74,16 +76,24 @@ def control_plane_home_for(path: Path) -> Path:
     home.mkdir(parents=True, exist_ok=True)
     (home / "secrets").mkdir(exist_ok=True)
     (home / "state").mkdir(exist_ok=True)
+    os.environ.setdefault("JOBOPS_CONTROL_PLANE", "1")
+    from authority import install_control_plane_privilege, reset_control_plane_for_tests
+
+    reset_control_plane_for_tests()
+    os.environ.pop("JOBOPS_AGENT_ROLE", None)
+    install_control_plane_privilege(home)
     return home
 
 
 def open_test_orchestrator(workspace_home: Path, *, principal: str = "pytest"):
     """Issue a verified grant and return an OrchestratorContext manager."""
-    from authority import reset_control_plane_for_tests
+    from authority import install_control_plane_privilege, reset_control_plane_for_tests
     from trust_boundary import open_orchestrator
 
     reset_control_plane_for_tests()
     os.environ.pop("JOBOPS_AGENT_ROLE", None)
+    os.environ.setdefault("JOBOPS_CONTROL_PLANE", "1")
+    install_control_plane_privilege(workspace_home)
     return open_orchestrator(workspace_home, principal=principal)
 
 

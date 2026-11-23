@@ -20,7 +20,9 @@ from agent_sandbox import AgentSandbox, SandboxViolation, require_enforceable_re
 from approval_controller import (
     ApprovalAuthError,
     ApprovalController,
+    EchoChallengeChannel,
     UserSession,
+    issue_confirmed_session,
     mint_user_session,
 )
 from authority import (
@@ -187,7 +189,7 @@ def test_approval_controller_pending_then_authenticated_approve(jobops_home: Pat
     led = Ledger(jobops_home / "state" / "appr.db")
     led.start_run("appr-1", floor=40)
     with open_orchestrator(jobops_home, principal="pytest"):
-        ctl = ApprovalController(led)
+        ctl = ApprovalController(led, workspace_home=jobops_home)
         ctl.request_approval(
             approval_id="a1",
             user_id="user-1",
@@ -201,11 +203,12 @@ def test_approval_controller_pending_then_authenticated_approve(jobops_home: Pat
         assert row is not None
         assert row["status"] == "pending"
 
-        session = mint_user_session(
-            "user-1",
-            approval_id="a1",
+        session = issue_confirmed_session(
             ledger=led,
-            explicit_user_action=True,
+            workspace_home=jobops_home,
+            user_id="user-1",
+            approval_id="a1",
+            channel=EchoChallengeChannel(),
         )
         decided = ctl.approve(
             approval_id="a1",
@@ -482,7 +485,7 @@ def test_approval_controller_rejects_wrong_user(jobops_home: Path, monkeypatch):
     led = Ledger(jobops_home / "state" / "wrong.db")
     led.start_run("w1", floor=40)
     with open_orchestrator(jobops_home, principal="pytest"):
-        ctl = ApprovalController(led)
+        ctl = ApprovalController(led, workspace_home=jobops_home)
         ctl.request_approval(
             approval_id="w",
             user_id="owner",
@@ -490,12 +493,13 @@ def test_approval_controller_rejects_wrong_user(jobops_home: Path, monkeypatch):
             session_id="s",
             artifact_fingerprint="c" * 64,
         )
-        with pytest.raises(ApprovalAuthError, match="user_mismatch|user_id"):
-            mint_user_session(
-                "intruder",
-                approval_id="w",
+        with pytest.raises(ApprovalAuthError, match="principal_mismatch|user_mismatch|user_id"):
+            issue_confirmed_session(
                 ledger=led,
-                explicit_user_action=True,
+                workspace_home=jobops_home,
+                user_id="intruder",
+                approval_id="w",
+                channel=EchoChallengeChannel(),
             )
     led.close()
 
@@ -505,7 +509,7 @@ def test_fabricated_session_and_replay_rejected(jobops_home: Path, monkeypatch):
     led = Ledger(jobops_home / "state" / "forge.db")
     led.start_run("forge-1", floor=40)
     with open_orchestrator(jobops_home, principal="pytest"):
-        ctl = ApprovalController(led)
+        ctl = ApprovalController(led, workspace_home=jobops_home)
         ctl.request_approval(
             approval_id="f1",
             user_id="owner",
@@ -527,11 +531,12 @@ def test_fabricated_session_and_replay_rejected(jobops_home: Path, monkeypatch):
                 expected_session_id="sess-f",
                 expected_fingerprint="d" * 64,
             )
-        session = mint_user_session(
-            "owner",
-            approval_id="f1",
+        session = issue_confirmed_session(
             ledger=led,
-            explicit_user_action=True,
+            workspace_home=jobops_home,
+            user_id="owner",
+            approval_id="f1",
+            channel=EchoChallengeChannel(),
         )
         decided = ctl.approve(
             approval_id="f1",
@@ -553,12 +558,13 @@ def test_fabricated_session_and_replay_rejected(jobops_home: Path, monkeypatch):
     led.close()
 
 
-def test_explicit_user_action_required_for_session(jobops_home: Path, monkeypatch):
+def test_explicit_user_action_boolean_rejected(jobops_home: Path, monkeypatch):
+    """Caller-controlled explicit_user_action is no longer accepted as proof."""
     monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
     led = Ledger(jobops_home / "state" / "explicit.db")
     led.start_run("ex-1", floor=40)
     with open_orchestrator(jobops_home, principal="pytest"):
-        ctl = ApprovalController(led)
+        ctl = ApprovalController(led, workspace_home=jobops_home)
         ctl.request_approval(
             approval_id="e1",
             user_id="owner",
@@ -566,11 +572,20 @@ def test_explicit_user_action_required_for_session(jobops_home: Path, monkeypatc
             session_id="s",
             artifact_fingerprint="e" * 64,
         )
-        with pytest.raises(ApprovalAuthError, match="explicit_user_action_required"):
+        with pytest.raises(ApprovalAuthError, match="explicit_user_action_not_accepted"):
             mint_user_session(
                 "owner",
                 approval_id="e1",
                 ledger=led,
+                workspace_home=jobops_home,
+                explicit_user_action=True,
+            )
+        with pytest.raises(ApprovalAuthError, match="confirmation_receipt_required"):
+            mint_user_session(
+                "owner",
+                approval_id="e1",
+                ledger=led,
+                workspace_home=jobops_home,
                 explicit_user_action=False,
             )
     led.close()

@@ -12,8 +12,8 @@
 
 ## Trust boundaries
 1. **Untrusted:** job postings, email bodies, scraped HTML, agent prompts/outputs, provider CLIs.
-2. **Trusted control plane:** `jobops` CLI with `JOBOPS_CONTROL_PLANE=1`, `ControlPlaneController`–issued `AuthorityGrant`, `OrchestratorContext`, ledger, `ToolBroker`, `AgentSandbox`, `ApprovalController` / `SessionIssuer`, `TrustedEvidenceIssuer`.
-3. **Installation secrets:** evidence HMAC + authority keys — never embedded defaults, never inherited into agent child environments (`JOBOPS_HOME` / `PYTHONPATH` / `JOBOPS_CONTROL_PLANE` stripped).
+2. **Trusted control plane:** `jobops` CLI with `JOBOPS_CONTROL_PLANE=1` **and** OS-openable `secrets/control_plane.privilege`, `ControlPlaneController`–issued `AuthorityGrant`, `OrchestratorContext`, ledger, `ToolBroker`, `AgentSandbox`, `InteractiveApprovalGate` / `SessionIssuer`, `TrustedEvidenceIssuer`.
+3. **Installation secrets:** evidence HMAC + authority + confirmation keys + privilege credential — never embedded defaults, never inherited into agent child environments (`JOBOPS_HOME` / `PYTHONPATH` / `JOBOPS_CONTROL_PLANE` stripped).
 
 ## Key threats and mitigations
 
@@ -24,12 +24,12 @@
 | T3 | Known/dev signing secret in production | Fail closed; reject known insecure values; no fallback secret | Operators must provision a key |
 | T4 | SSRF / DNS rebinding via verify fetch | URL validation + connect-time IP pin + peer re-check on all `safe_http_fetch` paths | Exotic dual-stack / redirect races need continued tests |
 | T5 | Fixture / mismatched PDF on live path | Recompute SHA-256; reject `fixture` method when live; validate `%PDF` magic; real multi-page fixture | Text extraction quality varies by PDF tooling |
-| T6 | Duplicate / uncertain submit | Form locks, atomic daily reservations (required before authorize), consume/uncertain reservation lifecycle, no auto-retry after `SubmissionUncertain` | Live portal adapters not production-certified |
+| T6 | Duplicate / uncertain submit | Form locks, atomic daily reservations (required before authorize), permanent `application_identities` across dates/runs, consume/uncertain lifecycle, no auto-retry after `SubmissionUncertain` | Live portal adapters not production-certified |
 | T7 | Accidental live submit | `JOBOPS_ALLOW_SUBMIT` / `JOBOPS_ENABLE_LIVE_SUBMIT` default `0` | Misconfiguration by operator |
 | T8 | Evidence issuance from agent process | Issuer requires verified `AuthorityGrant` inside `OrchestratorContext` (not merely clearing `JOBOPS_AGENT_ROLE`) + approved ledger row; control-plane flag never given to agents | Logical isolation, not hardware TEE; same-OS-user key theft remains residual |
 | T9 | Agent inherits signing/approval secrets | `build_agent_subprocess_env` explicit allowlist; secret keys + `JOBOPS_HOME` / `PYTHONPATH` / `JOBOPS_CONTROL_PLANE` stripped | Operator must not mount secrets into agent-readable workspaces |
-| T10 | Agent self-approves submissions | Approvals start `pending`; `SessionIssuer` binds stored single-use sessions to a principal + pending approval; explicit user action required; fabricated/expired/replayed sessions rejected | Session token theft within TTL before consume |
-| T11 | Self-minted orchestrator privileges | `ControlPlaneController` issues signed grants; `OrchestratorContext` refuses self-created authority; agent contamination + missing control-plane flag block bootstrap | Process that already holds control-plane env + key can still issue grants |
+| T10 | Agent self-approves submissions | Approvals start `pending`; `InteractiveApprovalGate` requires principal match + challenge echo; MAC'd receipts; fabricated confirmation / principal mismatch / replay rejected; atomic bind+consume+decide | Session token theft within TTL before consume; same-OS-user TTY hijack |
+| T11 | Self-minted orchestrator privileges | `ControlPlaneController` issues signed grants; privilege credential required (env alone insufficient); agent contamination blocks bootstrap | Same-OS-user that can open privilege file + env can still issue grants |
 | T12 | Unsandboxed AI on sensitive workflows | `frontier_submit` / `outreach` refuse `JOBOPS_ALLOW_UNSANDBOXED_AGENT=1` | Other roles may still opt into residual unsandboxed risk |
 
 ## Out of scope (explicit)

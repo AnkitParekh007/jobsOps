@@ -2,26 +2,33 @@
 """
 Authenticated approval controller.
 
-New approvals always start as ``pending``. Only an authenticated user action
-bound to a stored, single-use session (issued by SessionIssuer for a specific
-pending approval) may transition them to ``approved``. Arbitrary user IDs,
-fabricated tokens, expired sessions, and replayed approvals are rejected.
+New approvals always start as ``pending``. Only an authenticated interactive
+confirmation (InteractiveApprovalGate) may mint a stored, single-use session
+bound to a specific pending approval. Caller-controlled booleans are not proof
+of user intent. Arbitrary user IDs, fabricated confirmations/tokens, expired
+sessions, and replayed approvals are rejected.
 """
 from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import secrets
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Protocol
 
 _LIB = Path(__file__).resolve().parent
 if str(_LIB) not in sys.path:
     sys.path.insert(0, str(_LIB))
 
+from authority import (  # noqa: E402
+    AuthorityError,
+    load_or_create_confirmation_key,
+    require_privileged_access,
+)
 from ledger import Ledger  # noqa: E402
 from trust_boundary import (  # noqa: E402
     agent_role_from_env,
@@ -56,20 +63,123 @@ def _token_hash(token: str) -> str:
 
 
 @dataclass(frozen=True)
+class ConfirmationPrompt:
+    """Exact approval details presented to the authenticated principal."""
+
+    approval_id: str
+    user_id: str
+    job_key: str
+    artifact_fingerprint: str
+    action: str
+    challenge: str
+    document_path: str = ""
+
+    def render(self) -> str:
+        return (
+            "jobsOps approval confirmation\n"
+            f"  principal : {self.user_id}\n"
+            f"  approval  : {self.approval_id}\n"
+            f"  job       : {self.job_key}\n"
+            f"  fingerprint: {self.artifact_fingerprint}\n"
+            f"  document  : {self.document_path or '(none)'}\n"
+            f"  action    : {self.action}\n"
+            f"  challenge : {self.challenge}\n"
+            "Type the challenge exactly to confirm. Anything else cancels.\n"
+        )
+
+
+@dataclass(frozen=True)
+class ConfirmationReceipt:
+    """
+    Cryptographic proof that InteractiveApprovalGate obtained a real confirmation.
+
+    Constructing this dataclass with invented fields fails MAC verification —
+    model-controlled code cannot mint a valid receipt without the privilege-gated
+    confirmation key and a successful interactive challenge echo.
+    """
+
+    receipt_id: str
+    approval_id: str
+    user_id: str
+    job_key: str
+    artifact_fingerprint: str
+    action: str
+    challenge: str
+    confirmed_at: str
+    mac: str
+
+    def payload(self) -> bytes:
+        body = {
+            "receipt_id": self.receipt_id,
+            "approval_id": self.approval_id,
+            "user_id": self.user_id,
+            "job_key": self.job_key,
+            "artifact_fingerprint": self.artifact_fingerprint,
+            "action": self.action,
+            "challenge": self.challenge,
+            "confirmed_at": self.confirmed_at,
+        }
+        return json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+
+class ConfirmationChannel(Protocol):
+    """Interactive channel that presents the prompt and returns the user's echo."""
+
+    def present_and_confirm(self, prompt: ConfirmationPrompt) -> str: ...
+
+
+class TtyConfirmationChannel:
+    """Trusted interactive TTY channel — model code cannot drive this silently."""
+
+    def present_and_confirm(self, prompt: ConfirmationPrompt) -> str:
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            raise ApprovalAuthError("interactive_tty_required")
+        sys.stdout.write(prompt.render())
+        sys.stdout.flush()
+        try:
+            return sys.stdin.readline().strip()
+        except EOFError as exc:
+            raise ApprovalAuthError("interactive_confirmation_aborted") from exc
+
+
+class EchoChallengeChannel:
+    """
+    Test-only channel that correctly echoes the challenge.
+
+    Still goes through InteractiveApprovalGate MAC + ledger binding — it does
+    not bypass confirmation verification, only supplies the interactive response.
+    """
+
+    def present_and_confirm(self, prompt: ConfirmationPrompt) -> str:
+        return prompt.challenge
+
+
+class FabricatedConfirmationChannel:
+    """Adversarial channel that returns a fabricated (wrong) confirmation."""
+
+    def __init__(self, response: str = "fabricated-confirmation") -> None:
+        self.response = response
+
+    def present_and_confirm(self, prompt: ConfirmationPrompt) -> str:
+        return self.response
+
+
+@dataclass(frozen=True)
 class UserSession:
     """
     Authenticated end-user session for approval decisions.
 
     Constructing this dataclass alone is insufficient — verify/consume requires
-    a matching stored row issued by SessionIssuer.
+    a matching stored row issued by SessionIssuer after interactive confirmation.
     """
 
     user_id: str
     session_token: str
     session_id: str
     approval_id: str
-    auth_method: str = "cli_session"
+    auth_method: str = "interactive_confirm"
     expires_at: str = ""
+    confirmation_receipt_id: str = ""
 
     def fingerprint(self) -> str:
         return hashlib.sha256(
@@ -79,39 +189,199 @@ class UserSession:
         ).hexdigest()
 
 
+def _sign_receipt(secret: bytes, receipt: ConfirmationReceipt) -> str:
+    return hmac.new(secret, receipt.payload(), hashlib.sha256).hexdigest()
+
+
+def verify_confirmation_receipt(
+    receipt: ConfirmationReceipt,
+    *,
+    workspace_home: Path | str,
+    expected_approval_id: str,
+    expected_user_id: str,
+    expected_job_key: str,
+    expected_fingerprint: str,
+    expected_action: str = "approve",
+) -> None:
+    """Reject fabricated or mismatched confirmation receipts."""
+    try:
+        secret = load_or_create_confirmation_key(Path(workspace_home))
+    except AuthorityError as exc:
+        raise ApprovalAuthError(f"confirmation_key_unavailable:{exc}") from exc
+    expected_mac = _sign_receipt(secret, receipt)
+    if not hmac.compare_digest(expected_mac, receipt.mac):
+        raise ApprovalAuthError("confirmation_receipt_mac_invalid")
+    if receipt.approval_id != expected_approval_id:
+        raise ApprovalAuthError("confirmation_approval_mismatch")
+    if receipt.user_id != expected_user_id:
+        raise ApprovalAuthError("confirmation_principal_mismatch")
+    if receipt.job_key != expected_job_key:
+        raise ApprovalAuthError("confirmation_job_mismatch")
+    if receipt.artifact_fingerprint != expected_fingerprint:
+        raise ApprovalAuthError("confirmation_fingerprint_mismatch")
+    if receipt.action != expected_action:
+        raise ApprovalAuthError("confirmation_action_mismatch")
+    if not receipt.challenge or len(receipt.challenge) < 16:
+        raise ApprovalAuthError("confirmation_challenge_invalid")
+
+
+class InteractiveApprovalGate:
+    """
+    Trusted interactive approval entry point.
+
+    Verifies the authenticated principal, presents the exact job / fingerprint /
+    action, requires a real challenge echo that model-controlled code cannot
+    fabricate, and binds the resulting session to that approval.
+    """
+
+    def __init__(
+        self,
+        ledger: Ledger,
+        workspace_home: Path | str,
+        *,
+        channel: Optional[ConfirmationChannel] = None,
+    ) -> None:
+        require_orchestrator("approve")
+        if is_untrusted_agent_role(agent_role_from_env()):
+            raise ApprovalAuthError("interactive_gate_forbidden_in_agent_role")
+        home = Path(workspace_home).expanduser().resolve()
+        try:
+            require_privileged_access(home)
+        except AuthorityError as exc:
+            raise ApprovalAuthError(f"interactive_gate_privilege_denied:{exc}") from exc
+        self.ledger = ledger
+        self.workspace_home = home
+        self.channel: ConfirmationChannel = channel or TtyConfirmationChannel()
+        self._secret = load_or_create_confirmation_key(home)
+
+    def confirm_and_issue_session(
+        self,
+        *,
+        approval_id: str,
+        principal: str,
+        action: str = "approve",
+        ttl_sec: int = DEFAULT_SESSION_TTL_SEC,
+        auth_method: str = "interactive_confirm",
+    ) -> UserSession:
+        require_orchestrator("approve")
+        if is_untrusted_agent_role(agent_role_from_env()):
+            raise ApprovalAuthError("user_session_forbidden_in_agent_role")
+        if not principal or not str(principal).strip():
+            raise ApprovalAuthError("principal_required")
+        uid = str(principal).strip()
+        if uid in {"*", "any", "admin", "root"} or uid.startswith("arbitrary:"):
+            raise ApprovalAuthError("user_id_rejected")
+        row = self.ledger.get_approval(approval_id)
+        if row is None:
+            raise ApprovalAuthError("approval_not_found")
+        if row["user_id"] != uid:
+            raise ApprovalAuthError("confirmation_principal_mismatch")
+        if action == "approve" and row["status"] != "pending":
+            raise ApprovalAuthError(f"approval_not_pending:{row['status']}")
+        if action == "revoke" and row["status"] not in {"pending", "approved"}:
+            raise ApprovalAuthError(f"approval_not_revocable:{row['status']}")
+        if action not in {"approve", "revoke"}:
+            raise ApprovalAuthError(f"unsupported_session_action:{action}")
+
+        challenge = secrets.token_hex(16)
+        prompt = ConfirmationPrompt(
+            approval_id=approval_id,
+            user_id=uid,
+            job_key=str(row["job_key"]),
+            artifact_fingerprint=str(row["artifact_fingerprint"]),
+            action=action,
+            challenge=challenge,
+            document_path=str(row.get("document_path") or ""),
+        )
+        response = self.channel.present_and_confirm(prompt)
+        if not hmac.compare_digest(str(response).strip(), challenge):
+            raise ApprovalAuthError("confirmation_challenge_mismatch")
+
+        now = _utc_now()
+        receipt = ConfirmationReceipt(
+            receipt_id=f"crec_{secrets.token_hex(16)}",
+            approval_id=approval_id,
+            user_id=uid,
+            job_key=str(row["job_key"]),
+            artifact_fingerprint=str(row["artifact_fingerprint"]),
+            action=action,
+            challenge=challenge,
+            confirmed_at=_iso(now),
+            mac="",  # filled after
+        )
+        mac = _sign_receipt(self._secret, receipt)
+        receipt = ConfirmationReceipt(
+            receipt_id=receipt.receipt_id,
+            approval_id=receipt.approval_id,
+            user_id=receipt.user_id,
+            job_key=receipt.job_key,
+            artifact_fingerprint=receipt.artifact_fingerprint,
+            action=receipt.action,
+            challenge=receipt.challenge,
+            confirmed_at=receipt.confirmed_at,
+            mac=mac,
+        )
+        self.ledger.store_confirmation_receipt(
+            receipt_id=receipt.receipt_id,
+            approval_id=approval_id,
+            user_id=uid,
+            challenge_hash=_token_hash(challenge),
+            action=action,
+            confirmed_at=receipt.confirmed_at,
+            mac=mac,
+            meta={
+                "job_key": receipt.job_key,
+                "artifact_fingerprint": receipt.artifact_fingerprint,
+            },
+        )
+        return SessionIssuer(self.ledger, self.workspace_home).issue_for_approval(
+            user_id=uid,
+            approval_id=approval_id,
+            confirmation=receipt,
+            auth_method=auth_method,
+            ttl_sec=ttl_sec,
+            action_name=action,
+        )
+
+
 class SessionIssuer:
     """Trusted issuer of stored, approval-bound, single-use user sessions."""
 
-    def __init__(self, ledger: Ledger) -> None:
+    def __init__(self, ledger: Ledger, workspace_home: Path | str) -> None:
         require_orchestrator("approve")
         if is_untrusted_agent_role(agent_role_from_env()):
             raise ApprovalAuthError("session_issuer_forbidden_in_agent_role")
+        home = Path(workspace_home).expanduser().resolve()
+        try:
+            require_privileged_access(home)
+        except AuthorityError as exc:
+            raise ApprovalAuthError(f"session_issuer_privilege_denied:{exc}") from exc
         self.ledger = ledger
+        self.workspace_home = home
 
     def issue_for_approval(
         self,
         *,
         user_id: str,
         approval_id: str,
-        explicit_user_action: bool,
-        auth_method: str = "cli_session",
+        confirmation: ConfirmationReceipt,
+        auth_method: str = "interactive_confirm",
         ttl_sec: int = DEFAULT_SESSION_TTL_SEC,
         action_name: str = "approve",
     ) -> UserSession:
         """
-        Mint a session bound to a pending approval for an authenticated principal.
+        Mint a session bound to a pending approval after interactive confirmation.
 
-        ``explicit_user_action`` must be True — callers must obtain a real user
-        confirmation (TTY prompt / UI click) before setting this flag.
+        A valid ``ConfirmationReceipt`` from InteractiveApprovalGate is required —
+        a caller-controlled boolean is not accepted as proof of user intent.
         """
         require_orchestrator("approve")
         if is_untrusted_agent_role(agent_role_from_env()):
             raise ApprovalAuthError("user_session_forbidden_in_agent_role")
-        if not explicit_user_action:
-            raise ApprovalAuthError("explicit_user_action_required")
+        if confirmation is None:
+            raise ApprovalAuthError("confirmation_receipt_required")
         if not user_id or not str(user_id).strip():
             raise ApprovalAuthError("user_id_required")
-        # Reject obviously fabricated / wildcard principals.
         uid = str(user_id).strip()
         if uid in {"*", "any", "admin", "root"} or uid.startswith("arbitrary:"):
             raise ApprovalAuthError("user_id_rejected")
@@ -126,6 +396,27 @@ class SessionIssuer:
             raise ApprovalAuthError(f"unsupported_session_action:{action_name}")
         if row["user_id"] != uid:
             raise ApprovalAuthError("user_session_user_mismatch")
+        verify_confirmation_receipt(
+            confirmation,
+            workspace_home=self.workspace_home,
+            expected_approval_id=approval_id,
+            expected_user_id=uid,
+            expected_job_key=str(row["job_key"]),
+            expected_fingerprint=str(row["artifact_fingerprint"]),
+            expected_action=action_name,
+        )
+        stored_receipt = self.ledger.get_confirmation_receipt(confirmation.receipt_id)
+        if stored_receipt is None:
+            raise ApprovalAuthError("confirmation_receipt_not_found")
+        if stored_receipt.get("consumed_at"):
+            raise ApprovalAuthError("confirmation_receipt_already_consumed")
+        if stored_receipt["approval_id"] != approval_id:
+            raise ApprovalAuthError("confirmation_approval_mismatch")
+        if stored_receipt["user_id"] != uid:
+            raise ApprovalAuthError("confirmation_principal_mismatch")
+        # Consume confirmation (single-use) then issue session.
+        if not self.ledger.consume_confirmation_receipt(confirmation.receipt_id):
+            raise ApprovalAuthError("confirmation_receipt_consume_failed")
         now = _utc_now()
         session_id = f"usess_{secrets.token_hex(16)}"
         token = secrets.token_hex(32)
@@ -139,6 +430,7 @@ class SessionIssuer:
             issued_at=_iso(now),
             expires_at=expires_at,
             explicit_action=action_name,
+            meta={"confirmation_receipt_id": confirmation.receipt_id},
         )
         return UserSession(
             user_id=uid,
@@ -147,7 +439,38 @@ class SessionIssuer:
             approval_id=approval_id,
             auth_method=auth_method,
             expires_at=expires_at,
+            confirmation_receipt_id=confirmation.receipt_id,
         )
+
+
+def issue_confirmed_session(
+    *,
+    ledger: Ledger,
+    workspace_home: Path | str,
+    user_id: str,
+    approval_id: str,
+    channel: Optional[ConfirmationChannel] = None,
+    action: str = "approve",
+    ttl_sec: int = DEFAULT_SESSION_TTL_SEC,
+) -> UserSession:
+    """
+    Preferred entry: interactive gate → confirmation receipt → stored session.
+
+    Default channel is TTY (InteractiveApprovalGate). Tests must pass an explicit
+    ``EchoChallengeChannel``; model-controlled code cannot supply a valid echo
+    without going through the gate's challenge.
+    """
+    gate = InteractiveApprovalGate(
+        ledger,
+        workspace_home,
+        channel=channel,
+    )
+    return gate.confirm_and_issue_session(
+        approval_id=approval_id,
+        principal=user_id,
+        action=action,
+        ttl_sec=ttl_sec,
+    )
 
 
 def mint_user_session(
@@ -155,16 +478,46 @@ def mint_user_session(
     *,
     approval_id: str,
     ledger: Ledger,
-    explicit_user_action: bool,
-    auth_method: str = "cli_session",
+    workspace_home: Path | str,
+    confirmation: Optional[ConfirmationReceipt] = None,
+    channel: Optional[ConfirmationChannel] = None,
+    auth_method: str = "interactive_confirm",
     ttl_sec: int = DEFAULT_SESSION_TTL_SEC,
+    **kwargs: Any,
 ) -> UserSession:
-    """Create a fresh stored session bound to a pending approval (orchestrator only)."""
-    return SessionIssuer(ledger).issue_for_approval(
+    """
+    Create a fresh stored session bound to a pending approval (orchestrator only).
+
+    Requires interactive confirmation. Legacy ``explicit_user_action=True`` is
+    rejected — it is not proof of user intent.
+    """
+    if "explicit_user_action" in kwargs:
+        # Caller-controlled boolean is no longer accepted as authorization proof.
+        if kwargs.get("explicit_user_action") is True and confirmation is None:
+            raise ApprovalAuthError(
+                "explicit_user_action_not_accepted:use_interactive_confirmation"
+            )
+        if kwargs.get("explicit_user_action") is False:
+            raise ApprovalAuthError("confirmation_receipt_required")
+    if confirmation is not None:
+        return SessionIssuer(ledger, workspace_home).issue_for_approval(
+            user_id=user_id,
+            approval_id=approval_id,
+            confirmation=confirmation,
+            auth_method=auth_method,
+            ttl_sec=ttl_sec,
+        )
+    if channel is None:
+        raise ApprovalAuthError(
+            "confirmation_channel_or_receipt_required:"
+            "pass InteractiveApprovalGate / EchoChallengeChannel / ConfirmationReceipt"
+        )
+    return issue_confirmed_session(
+        ledger=ledger,
+        workspace_home=workspace_home,
         user_id=user_id,
         approval_id=approval_id,
-        explicit_user_action=explicit_user_action,
-        auth_method=auth_method,
+        channel=channel,
         ttl_sec=ttl_sec,
     )
 
@@ -179,6 +532,9 @@ def verify_user_session(
 ) -> dict[str, Any]:
     """
     Verify session against stored state. Optionally consume (single-use approve).
+
+    Prefer ApprovalController.approve which performs binding + consume + decide
+    atomically.
     """
     if is_untrusted_agent_role(agent_role_from_env()):
         raise ApprovalAuthError("approval_forbidden_in_agent_role")
@@ -220,9 +576,12 @@ class ApprovalController:
     Sole sanctioned path for creating pending approvals and authenticating decisions.
     """
 
-    def __init__(self, ledger: Ledger) -> None:
+    def __init__(self, ledger: Ledger, workspace_home: Path | str | None = None) -> None:
         require_orchestrator("record_approval")
         self.ledger = ledger
+        self.workspace_home = (
+            Path(workspace_home).expanduser().resolve() if workspace_home else None
+        )
 
     def request_approval(
         self,
@@ -259,6 +618,36 @@ class ApprovalController:
             allow_overwrite=False,
         )
 
+    def interactive_approve(
+        self,
+        *,
+        approval_id: str,
+        principal: str,
+        expected_job_key: str,
+        expected_session_id: str,
+        expected_fingerprint: str,
+        channel: Optional[ConfirmationChannel] = None,
+        workspace_home: Path | str | None = None,
+    ) -> dict[str, Any]:
+        """Full trusted path: interactive confirm → session → atomic approve."""
+        home = workspace_home or self.workspace_home
+        if home is None:
+            raise ApprovalAuthError("workspace_home_required")
+        session = issue_confirmed_session(
+            ledger=self.ledger,
+            workspace_home=home,
+            user_id=principal,
+            approval_id=approval_id,
+            channel=channel,
+        )
+        return self.approve(
+            approval_id=approval_id,
+            user_session=session,
+            expected_job_key=expected_job_key,
+            expected_session_id=expected_session_id,
+            expected_fingerprint=expected_fingerprint,
+        )
+
     def approve(
         self,
         *,
@@ -271,48 +660,27 @@ class ApprovalController:
         """
         Authenticated user action: pending → approved.
 
-        Requires a stored, unexpired, single-use session bound to this approval.
-        Replayed approvals and fabricated tokens are rejected.
+        Binding validation, session consumption, and approval transition are
+        performed atomically in a single ledger transaction.
         """
         require_orchestrator("approve")
-        row = self.ledger.get_approval(approval_id)
-        if row is None:
-            raise ApprovalAuthError("approval_not_found")
-        if row["status"] != "pending":
-            raise ApprovalAuthError(f"approval_not_pending:{row['status']}")
-        if row.get("expires_at"):
-            try:
-                if _parse_iso(str(row["expires_at"])) <= _utc_now():
-                    raise ApprovalAuthError("approval_expired")
-            except ValueError as exc:
-                raise ApprovalAuthError("approval_expiry_invalid") from exc
-        verify_user_session(
-            user_session,
-            expected_user_id=row["user_id"],
-            approval_id=approval_id,
-            ledger=self.ledger,
-            consume=True,
-        )
-        if row["job_key"] != expected_job_key:
-            raise ApprovalAuthError("approval_job_mismatch")
-        if row["session_id"] != expected_session_id:
-            raise ApprovalAuthError("approval_session_mismatch")
-        if row["artifact_fingerprint"] != expected_fingerprint:
-            raise ApprovalAuthError("approval_fingerprint_mismatch")
-        meta = dict(row.get("meta") or {})
-        meta["auth_method"] = user_session.auth_method
-        meta["session_fp"] = user_session.fingerprint()
-        meta["approval_session_id"] = user_session.session_id
-        self.ledger.decide_approval(
-            approval_id=approval_id,
-            status="approved",
-            decided_by=f"user:{user_session.user_id}",
-            meta=meta,
-            require_authority=True,
-            require_pending=True,
-        )
-        decided = self.ledger.get_approval(approval_id)
-        assert decided is not None
+        try:
+            decided = self.ledger.atomic_approve_with_session(
+                approval_id=approval_id,
+                user_id=user_session.user_id,
+                session_id=user_session.session_id,
+                session_token=user_session.session_token,
+                expected_job_key=expected_job_key,
+                expected_session_id=expected_session_id,
+                expected_fingerprint=expected_fingerprint,
+                auth_method=user_session.auth_method,
+                session_fp=user_session.fingerprint(),
+                confirmation_receipt_id=user_session.confirmation_receipt_id,
+            )
+        except KeyError as exc:
+            raise ApprovalAuthError(str(exc)) from exc
+        except PermissionError as exc:
+            raise ApprovalAuthError(str(exc)) from exc
         return decided
 
     def revoke(
@@ -323,31 +691,20 @@ class ApprovalController:
         reason: str = "",
     ) -> dict[str, Any]:
         require_orchestrator("approve")
-        row = self.ledger.get_approval(approval_id)
-        if row is None:
-            raise ApprovalAuthError("approval_not_found")
-        if row["status"] not in {"pending", "approved"}:
-            raise ApprovalAuthError(f"approval_not_revocable:{row['status']}")
-        verify_user_session(
-            user_session,
-            expected_user_id=row["user_id"],
-            approval_id=approval_id,
-            ledger=self.ledger,
-            consume=True,
-        )
-        meta = dict(row.get("meta") or {})
-        if reason:
-            meta["revoke_reason"] = reason
-        self.ledger.decide_approval(
-            approval_id=approval_id,
-            status="revoked",
-            decided_by=f"user:{user_session.user_id}",
-            meta=meta,
-            require_authority=True,
-            require_pending=False,
-        )
-        decided = self.ledger.get_approval(approval_id)
-        assert decided is not None
+        try:
+            decided = self.ledger.atomic_revoke_with_session(
+                approval_id=approval_id,
+                user_id=user_session.user_id,
+                session_id=user_session.session_id,
+                session_token=user_session.session_token,
+                reason=reason,
+                auth_method=user_session.auth_method,
+                session_fp=user_session.fingerprint(),
+            )
+        except KeyError as exc:
+            raise ApprovalAuthError(str(exc)) from exc
+        except PermissionError as exc:
+            raise ApprovalAuthError(str(exc)) from exc
         return decided
 
 
