@@ -12,7 +12,9 @@ Prefer GitHub **private vulnerability reporting** if enabled for this repository
 - All sensitive tools and remote providers are scoped by policy, consent, minimum permissions and audit logs.
 - Agent subprocesses receive an explicit minimal environment — never evidence-signing keys, approval credentials or connector tokens.
 - Filesystem/network/process/tool permissions for jobsOps-mediated tools are enforced outside prompts (`ToolBroker` + `AgentSandbox`); third-party CLIs fail closed unless operators opt into residual risk.
-- Approvals start pending; only an authenticated user action via `ApprovalController` may approve. Trusted evidence requires `OrchestratorContext`, not mutable `JOBOPS_AGENT_ROLE` alone.
+- Approvals start pending; only an authenticated, approval-bound, single-use `UserSession` from `SessionIssuer` (explicit user action) may approve. Trusted evidence and reservations require a `ControlPlaneController`-issued `AuthorityGrant` inside `OrchestratorContext` — clearing `JOBOPS_AGENT_ROLE` cannot mint authority.
+- Successful submission authorization requires a valid atomic reservation; Applied/Submitted consumes it and uncertain outcomes mark it non-retryable.
+- Unsandboxed third-party AI execution remains disabled for sensitive workflows (`frontier_submit` / `outreach`).
 - External auto-submit/outreach off by default; a plugin cannot create an alternate bypass route.
 - Log redaction, injection tests, credentials rotation and dependency/vulnerability scanning are mandatory before release.
 - The platform must preserve secure user data and provide deletion and export controls.

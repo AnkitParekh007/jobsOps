@@ -22,11 +22,13 @@ Pytest may skip provider adapter smokes when a CLI binary is not on `PATH`. Skip
 | Tool permission broker | `lib/tool_broker.py` sealed scopes | — |
 | Agent sandbox (FS/net/process) | `lib/agent_sandbox.py` for broker tools | OS-level sandbox of third-party agent CLIs |
 | Minimal agent env | `lib/trust_boundary.build_agent_subprocess_env` | — |
-| Fail-closed unsandboxed CLIs | default refuse; opt-in `JOBOPS_ALLOW_UNSANDBOXED_AGENT=1` | Verified vendor sandbox APIs |
-| Evidence HMAC + approvals | Fail-closed secret; `ApprovalController` pending→approve; `OrchestratorContext` | Hardware-backed key store / HSM |
+| Fail-closed unsandboxed CLIs | default refuse; sensitive roles never opt-in; others need `JOBOPS_ALLOW_UNSANDBOXED_AGENT=1` | Verified vendor sandbox APIs |
+| Evidence HMAC + approvals | Fail-closed secret; `SessionIssuer` + `ApprovalController`; `ControlPlaneController` grants | Hardware-backed key store / HSM |
+| Trusted sessions | Stored single-use sessions bound to pending approval | SSO / WebAuthn |
+| Orchestrator authority | Signed grants; clearing `JOBOPS_AGENT_ROLE` cannot mint | Separate privileged daemon / TEE |
 | PDF live validation | Recompute + magic + reject fixtures; `pdf_fixture` ordered extract | Full ATS visual QA |
 | SSRF / DNS rebinding | Validate + pin IP + peer check | Dedicated egress proxy |
-| Atomic daily reservations | `submission_reservations` + `BEGIN IMMEDIATE` | Multi-host distributed lock service |
+| Atomic daily reservations | Required before authorize; consume / uncertain lifecycle; cross-process tests | Multi-host distributed lock service |
 | Preview mode | `jobops run --preview` non-mutating | Rich UI approval inbox |
 | Mock portal / ATS E2E | Authorize/receipt + form/confirm/timeout/duplicate | Live browser portal adapters (opt-in) |
 | Sheets/Drive | Offline plan artifacts | Authenticated live Google APIs |
