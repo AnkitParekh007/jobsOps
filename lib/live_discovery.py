@@ -11,7 +11,6 @@ import hashlib
 import html
 import json
 import re
-import sys
 import time
 import uuid
 from dataclasses import dataclass
