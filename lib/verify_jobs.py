@@ -7,6 +7,7 @@ import json
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -67,13 +68,17 @@ class VerifyResult:
 
 
 def http_fetch(url: str, *, timeout: float = 12.0) -> tuple[int, str]:
+    scheme = urllib.parse.urlparse(url).scheme.lower()
+    if scheme not in {"http", "https"}:
+        return 0, f"fetch_error:disallowed_scheme:{scheme or 'missing'}"
     req = urllib.request.Request(
         url,
         headers={"User-Agent": "JobOps-verify/1.0 (+local research)"},
         method="GET",
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        # Scheme allowlisted above (http/https only).
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
             raw = resp.read(400_000)
             charset = resp.headers.get_content_charset() or "utf-8"
             try:

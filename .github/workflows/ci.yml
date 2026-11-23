@@ -46,6 +46,9 @@ jobs:
           JOBOPS_RUNTIME: deterministic
         run: python -m pytest -q
       - name: CLI smoke
+        env:
+          # lib/ modules (agent_runtime, etc.) are path-imported, not a top-level package.
+          PYTHONPATH: lib
         run: |
           python -m jobops.cli doctor || true
           python -m jobops.cli init --workspace "$RUNNER_TEMP/jobops-home" --name "Alex Candidate" --countries "Remote"
@@ -67,14 +70,19 @@ jobs:
       - name: Ruff check
         run: |
           python -m ruff check lib jobops tests --select E,F,W --ignore E501
-      - name: Bandit (high confidence)
+      - name: Bandit (high severity gate)
         run: |
+          # Bandit exits non-zero when any finding matches -ll; keep JSON export
+          # non-fatal so the severity gate below is the source of truth.
           python -m bandit -q -r lib jobops -ll || true
-          python -m bandit -q -r lib jobops -ll -f json -o bandit.json
+          python -m bandit -q -r lib jobops -ll -f json -o bandit.json || true
           python - <<'PY'
           import json
           from pathlib import Path
-          data = json.loads(Path("bandit.json").read_text(encoding="utf-8"))
+          path = Path("bandit.json")
+          if not path.is_file() or path.stat().st_size == 0:
+              raise SystemExit("bandit.json missing or empty after scan")
+          data = json.loads(path.read_text(encoding="utf-8"))
           high = [r for r in data.get("results", []) if r.get("issue_severity") == "HIGH"]
           print("high_findings", len(high))
           for r in high[:20]:
