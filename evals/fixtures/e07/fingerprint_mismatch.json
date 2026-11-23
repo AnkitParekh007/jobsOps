@@ -10,7 +10,7 @@
   "ats_score_fingerprint": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
   "quality_score_fingerprint": "ddd111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
   "fingerprint_method": "fixture",
-  "extracted_text": "Ankit Parekh\nAngular React TypeScript\nProfessional Experience",
+  "extracted_text": "Alex Candidate\nAngular React TypeScript\nProfessional Experience",
   "checklist": {
     "hard_eligibility_met": true,
     "filenames_correct": true

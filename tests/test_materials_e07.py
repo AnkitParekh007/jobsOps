@@ -20,6 +20,9 @@ def _load(name: str) -> dict:
     return json.loads((FIX / name).read_text(encoding="utf-8"))
 
 
+MARKERS = ["alex", "candidate"]
+
+
 def test_materials_pass_dry_run_ready_for_approval():
     data = _load("materials_pass.json")
     result = authorize_submission(
@@ -28,6 +31,7 @@ def test_materials_pass_dry_run_ready_for_approval():
         dry_run=True,
         require_form_lock=False,
         submits_today=0,
+        identity_markers=MARKERS,
     )
     assert result.state == STATE_READY_FOR_APPROVAL
     assert result.authorized is False
@@ -45,13 +49,14 @@ def test_dry_run_full_evidence_package():
         dry_run=True,
         require_form_lock=False,
         submits_today=0,
+        identity_markers=MARKERS,
     )
     assert result.state == data["expected_state"]
     assert result.sop_status == data["expected_sop_status"]
     pkg = result.package
     assert pkg["pdf_fingerprint"]
     assert pkg["evidence_package"]["dry_run"] is True
-    assert "Ankit" in pkg["extracted_text"]
+    assert "Alex" in pkg["extracted_text"]
     # Schema-valid package
     from contracts import validate
 
@@ -66,6 +71,7 @@ def test_ats_below_floor():
         dry_run=True,
         require_form_lock=False,
         submits_today=0,
+        identity_markers=MARKERS,
     )
     assert result.state == STATE_PREPARING
     assert any(data["expected_blocking_substring"] in b for b in result.blocking_reasons)
@@ -81,6 +87,7 @@ def test_invented_python_claim():
         ats_score_fingerprint=data["ats_score_fingerprint"],
         quality_score_fingerprint=data["quality_score_fingerprint"],
         fingerprint_method=data["fingerprint_method"],
+        identity_markers=MARKERS,
     )
     assert not ok
     assert any("invented_claim" in b for b in blocking)
@@ -94,13 +101,14 @@ def test_fingerprint_mismatch():
         dry_run=True,
         require_form_lock=False,
         submits_today=0,
+        identity_markers=MARKERS,
     )
     assert result.state == STATE_PREPARING
     assert any(data["expected_blocking_substring"] in b for b in result.blocking_reasons)
 
 
 def test_fingerprint_text_stable():
-    a = fingerprint_text("Ankit  Parekh\nReact")
-    b = fingerprint_text("Ankit Parekh React")
+    a = fingerprint_text("Alex  Candidate\nReact")
+    b = fingerprint_text("Alex Candidate React")
     assert a == b
     assert len(a) == 64

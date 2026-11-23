@@ -10,7 +10,7 @@
   "ats_score_fingerprint": "aaa111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
   "quality_score_fingerprint": "aaa111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
   "fingerprint_method": "fixture",
-  "extracted_text": "Ankit Parekh\nSenior Frontend Engineer\nAngular React TypeScript enterprise frontend RAG agentic workflows\nProfessional Experience\nBluemeteor — SOP Co-Pilot",
+  "extracted_text": "Alex Candidate\nSenior Frontend Engineer\nAngular React TypeScript enterprise frontend RAG agentic workflows\nProfessional Experience\nBluemeteor — SOP Co-Pilot",
   "checklist": {
     "posting_open": true,
     "not_duplicate": true,

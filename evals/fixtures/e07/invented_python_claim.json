@@ -10,7 +10,7 @@
   "ats_score_fingerprint": "ccc111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
   "quality_score_fingerprint": "ccc111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
   "fingerprint_method": "fixture",
-  "extracted_text": "Ankit Parekh\nExpert in Python and React\nProfessional Experience",
+  "extracted_text": "Alex Candidate\nExpert in Python and React\nProfessional Experience",
   "checklist": {
     "hard_eligibility_met": true,
     "filenames_correct": true

@@ -21,44 +21,14 @@ from contracts import (  # noqa: E402
 )
 from ledger import DEFAULT_DB, Ledger  # noqa: E402
 from policy import (  # noqa: E402
-    COUNTRY_PRIORITY,
     DAILY_SUBMIT_CAP,
     HANDOFF_FLOOR_DEFAULT,
-    SPONSORSHIP_REQUIRED,
 )
-
-RESUME_URL = "https://ankitparekh007.github.io/resume/"
-
-# Verified facts baked from scheduled-task-prompt.md §2 (deterministic, no LLM).
-BASELINE_FACTS = [
-    "Location: Mumbai; immediate availability; 15+ years experience.",
-    "Skills: Enterprise Angular, React, TypeScript (React/TS 5+ years).",
-    "Agentic AI workflows, RAG, approvals/audit; SOP Co-Pilot at Bluemeteor.",
-    "Former Forto Berlin EU Blue Card holder — not current German work authorization.",
-    "India work authorization is the verified baseline.",
-    "Germany, Ireland, and UAE require employer sponsorship evidence.",
-    "Relocation is acceptable; relocation ≠ sponsorship proof.",
-    "Do not invent Python proficiency or unstated credentials.",
-]
-
-
-def _load_notes(notes_path: Optional[Path]) -> tuple[list[str], Optional[str]]:
-    if notes_path is None:
-        # Best-effort local notes locations.
-        candidates = [
-            ROOT / "notes" / "verified-facts.md",
-            ROOT / "verified-facts.md",
-            ROOT / "local-notes.md",
-        ]
-        for c in candidates:
-            if c.is_file():
-                notes_path = c
-                break
-    if notes_path is None or not notes_path.is_file():
-        return [], None
-    text = notes_path.read_text(encoding="utf-8", errors="replace").strip()
-    extra = [line.strip("- ").strip() for line in text.splitlines() if line.strip()]
-    return extra[:50], str(notes_path)
+from user_workspace import (  # noqa: E402
+    default_jobops_home,
+    load_candidate_profile,
+    workspace_paths,
+)
 
 
 def _exclusion_counts(exclusion_path: Optional[Path], ledger: Ledger) -> dict[str, Any]:
@@ -89,7 +59,25 @@ def build_run_context(
     notes_path: Optional[Path] = None,
     db_path: Path = DEFAULT_DB,
     acquire_lock: bool = True,
+    workspace_home: Optional[Path] = None,
+    require_profile: bool = False,
 ) -> dict[str, Any]:
+    """
+    Build RunContext from private user workspace facts — never hardcoded biography.
+    """
+    home = Path(workspace_home) if workspace_home else default_jobops_home()
+    profile = load_candidate_profile(
+        home=home,
+        notes_path=Path(notes_path) if notes_path else None,
+        allow_missing=not require_profile,
+    )
+    prefs = dict(profile.preferences)
+    prefs["daily_submit_cap"] = int(prefs.get("daily_submit_cap") or DAILY_SUBMIT_CAP)
+    prefs["handoff_floor"] = int(floor)
+    sponsorship = prefs.get("sponsorship_required_countries")
+    if not isinstance(sponsorship, list):
+        sponsorship = []
+
     led = Ledger(db_path)
     try:
         led.start_run(run_id, floor=floor, phase="context")
@@ -102,54 +90,69 @@ def build_run_context(
             except RuntimeError as exc:
                 raise SystemExit(f"run_context: failed to acquire run lock: {exc}") from exc
 
-        note_facts, resolved_notes = _load_notes(notes_path)
-        facts = list(BASELINE_FACTS) + note_facts
         exclusion = _exclusion_counts(exclusion_path, led)
 
+        # Portal inventory from profile hints only — status remains unknown until verified.
+        portals = []
+        for name in ("Greenhouse", "Ashby", "Lever", "LinkedIn", "Gmail"):
+            hint = None
+            acct = (profile.portal_accounts or {}).get(name.lower()) or (
+                profile.portal_accounts or {}
+            ).get(name)
+            if isinstance(acct, dict):
+                hint = acct.get("account_hint")
+            elif isinstance(acct, str) and acct:
+                hint = "configured"
+            portals.append({"portal": name, "status": "unknown", "account_hint": hint})
+
         session_inventory = {
-            "portals": [
-                {"portal": "Greenhouse", "status": "unknown", "account_hint": None},
-                {"portal": "Ashby", "status": "unknown", "account_hint": None},
-                {"portal": "Lever", "status": "unknown", "account_hint": None},
-                {"portal": "LinkedIn", "status": "unknown", "account_hint": None},
-                {"portal": "Gmail", "status": "unknown", "account_hint": None},
-            ],
+            "portals": portals,
             "unknown_allowed": True,
         }
 
-        # Phase 1: sheet append proof is deferred to Phase 4 R01.
-        # Discovery may still run for local research; never record Applied without receipt.
         gates = {
             "sheet_append_proven": False,
-            "discovery_allowed": lock_acquired,
+            "discovery_allowed": lock_acquired and (
+                bool(profile.verified_facts) or not require_profile
+            ),
+            "profile_loaded": profile.loaded,
+            "auto_submit_enabled": bool(profile.consent.get("auto_submit_enabled")),
+            "outreach_send_enabled": bool(profile.consent.get("outreach_send_enabled")),
             "notes": [
-                "Phase 1 gate: run row + lock acquired (or abort).",
-                "Tracker append proof deferred to Phase 4 R01; discovery allowed for local research only.",
+                "Run row + lock acquired (or abort).",
+                "Candidate facts loaded from private JOBOPS_HOME only.",
                 "Never record Applied without receipt.",
+                "Submit and outreach send disabled unless consent explicitly enables them.",
             ],
         }
+        if profile.missing_reasons:
+            gates["notes"].append("profile_gaps: " + ", ".join(profile.missing_reasons))
 
         if not lock_acquired:
             gates["discovery_allowed"] = False
             raise SystemExit("run_context: run lock not acquired — aborting")
 
+        ws = workspace_paths(home)
         ctx: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
             "run_id": run_id,
             "created_at": utc_now_iso(),
             "policy_version": POLICY_VERSION,
             "verified_facts": {
-                "source_urls": [RESUME_URL],
-                "facts": facts,
+                "source_urls": list(profile.resume_urls),
+                "facts": list(profile.verified_facts),
                 "contradictions": [],
-                "notes_path": resolved_notes,
+                "notes_path": profile.source_path,
+                "identity_markers": list(profile.identity_markers),
+                "display_name": profile.display_name,
+                "workspace_home": str(ws["home"]),
             },
             "preferences": {
-                "country_priority": list(COUNTRY_PRIORITY),
-                "sponsorship_required_countries": sorted(SPONSORSHIP_REQUIRED),
-                "daily_submit_cap": DAILY_SUBMIT_CAP,
+                "country_priority": list(prefs.get("country_priority") or ["Remote"]),
+                "sponsorship_required_countries": list(sponsorship),
+                "daily_submit_cap": int(prefs["daily_submit_cap"]),
                 "handoff_floor": floor,
-                "india_remote_only": True,
+                "india_remote_only": bool(prefs.get("india_remote_only")),
             },
             "exclusion": {
                 "canonical_url_count": exclusion["canonical_url_count"],
@@ -168,13 +171,16 @@ def build_run_context(
 
         from contracts import make_envelope
 
+        evidence_refs = list(profile.resume_urls)
+        if profile.source_path:
+            evidence_refs.append(profile.source_path)
         env = make_envelope(
             run_id=run_id,
             producer="f01_run_context",
             artifact_type="run_context",
             payload=ctx,
             task_id=f"{run_id}:context",
-            evidence_refs=[RESUME_URL] + ([resolved_notes] if resolved_notes else []),
+            evidence_refs=evidence_refs or [f"workspace:{ws['home']}"],
         )
         led.append_artifact(env)
         led.mark_task(
@@ -183,7 +189,7 @@ def build_run_context(
             "context",
             "complete",
             finished=True,
-            detail={"lock_id": lock_id},
+            detail={"lock_id": lock_id, "profile_loaded": profile.loaded},
         )
         led.set_phase(run_id, "context_complete")
         return ctx
@@ -212,6 +218,8 @@ def main() -> int:
     ap.add_argument("--floor", type=int, default=HANDOFF_FLOOR_DEFAULT)
     ap.add_argument("--exclusion", default="", help="exclusion-index.json path (optional at context time)")
     ap.add_argument("--notes", default="", help="optional local verified-facts notes")
+    ap.add_argument("--workspace", default="", help="JOBOPS_HOME override")
+    ap.add_argument("--require-profile", action="store_true")
     ap.add_argument("--db", default=str(DEFAULT_DB))
     ap.add_argument("--out", default="", help="override run-context.json path")
     args = ap.parse_args()
@@ -219,6 +227,7 @@ def main() -> int:
     run_dir = Path(args.run_dir)
     exclusion = Path(args.exclusion) if args.exclusion else None
     notes = Path(args.notes) if args.notes else None
+    home = Path(args.workspace) if args.workspace else None
 
     ctx = build_run_context(
         run_id=args.run_id,
@@ -227,6 +236,8 @@ def main() -> int:
         notes_path=notes,
         db_path=Path(args.db),
         acquire_lock=True,
+        workspace_home=home,
+        require_profile=args.require_profile,
     )
     out = Path(args.out) if args.out else run_dir / "run-context.json"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -241,8 +252,11 @@ def main() -> int:
                 "session_inventory": str(inv),
                 "lock_acquired": bool((ctx.get("lock") or {}).get("acquired")),
                 "discovery_allowed": bool((ctx.get("gates") or {}).get("discovery_allowed")),
+                "profile_loaded": bool((ctx.get("gates") or {}).get("profile_loaded")),
+                "fact_count": len((ctx.get("verified_facts") or {}).get("facts") or []),
                 "daily_submit_cap": DAILY_SUBMIT_CAP,
                 "handoff_floor": args.floor,
+                "workspace_home": (ctx.get("verified_facts") or {}).get("workspace_home"),
             },
             indent=2,
         )

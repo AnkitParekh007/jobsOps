@@ -4,16 +4,31 @@ state/
 *.db-wal
 *.db-shm
 
+# Runtime artifacts / private exports (never commit candidate data)
+runs/
+_sheet_exports/
+exclusion-index.json
+handoff-state.json
+last-run-report.md
+bandit.json
+
 # Python
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
 venv/
+*.egg-info/
+dist/
+build/
 
-# Local secrets / env
+# Local secrets / env / private workspace copies
 .env
 .env.*
+candidate-profile.json
+verified-facts.md
+consent.json
+secrets/
 
 # OS / editor
 .DS_Store

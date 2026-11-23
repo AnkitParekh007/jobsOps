@@ -1,6 +1,6 @@
 # Frontier — submit (gated; cap 1)
 
-You run **only** when the harness (or `lib/submission_authorize.py --check-only`) says the shortlist is non-empty **and** daily submit cap remaining &gt; 0.
+You run **only** when the harness (or `lib/submission_authorize.py --check-only`) says the shortlist is non-empty **and** daily submit cap remaining &gt; 0 **and** `JOBOPS_ALLOW_SUBMIT=1` **and** `JOBOPS_ENABLE_LIVE_SUBMIT=1`.
 
 ## Preconditions (hard)
 
@@ -8,6 +8,7 @@ You run **only** when the harness (or `lib/submission_authorize.py --check-only`
 2. Daily submit cap remaining = 1 (Asia/Calcutta day).
 3. You will call / respect `lib/submission_authorize.py` before any browser submit.
 4. Never auto-retry after `SubmissionUncertain`.
+5. Portal account identity comes from the private user workspace — never hardcode emails.
 
 ## Goals
 
@@ -26,13 +27,13 @@ Read `runs/<run_id>/ranked-shortlist.json`. Prefer Eligible shortlist rank 1. De
 ### B. Materials (A01–A03)
 
 - Company brief + research handoff in Drive (thin; public sources only).
-- Resume/cover from verified facts only — no invented Python / German fluency / credentials.
+- Resume/cover from verified facts only — no invented skills / languages / credentials.
 - Validate PDF text extract; record SHA-256 fingerprint (bytes preferred).
 - Score second-pass ATS and quality against the **same** fingerprint.
 
 ### C. Authorize (deterministic — mandatory)
 
-Build an application-package JSON and run:
+Build an application-package JSON with an **evidence_package** of verified objects (not bare booleans) and run:
 
 ```bash
 python3 lib/submission_authorize.py \
@@ -57,7 +58,7 @@ If state is not `SubmissionAuthorized`, do not open the form.
 
 ### D. Submit (A04) — only if authorized
 
-- Chrome only; account ankit77parekh@gmail.com.
+- Use the authorized portal session from the private workspace inventory.
 - Hold form lock for this canonical URL.
 - Never bypass CAPTCHA / OTP / legal acceptance.
 - After click: record portal confirmation and Gmail receipt via:
@@ -82,3 +83,4 @@ Ensure `last-run-report.md` cites this `RUN_ID`, submit outcome or Ready for app
 - Marking Applied without Gmail receipt (unless preferences explicitly allowlist the portal — default: no)
 - Auto-retry after uncertain
 - Raising daily cap above 1
+- Trusting agent checklist booleans as proof

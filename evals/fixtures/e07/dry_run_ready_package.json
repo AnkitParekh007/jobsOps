@@ -12,7 +12,7 @@
   "ats_score_fingerprint": "dry111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
   "quality_score_fingerprint": "dry111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
   "fingerprint_method": "fixture",
-  "extracted_text": "Ankit Parekh\nankit77parekh@gmail.com\nForward Deployed Engineer\nAngular React TypeScript RAG agentic workflows approvals audit\nProfessional Experience\nEducation\nSkills",
+  "extracted_text": "Alex Candidate\nalex.candidate@example.com\nForward Deployed Engineer\nAngular React TypeScript RAG agentic workflows approvals audit\nProfessional Experience\nEducation\nSkills",
   "checklist": {
     "posting_open": true,
     "not_duplicate": true,
@@ -31,8 +31,8 @@
     "daily_cap_allows": true
   },
   "evidence_package": {
-    "resume_filename": "Ankit_Parekh_Resume.pdf",
-    "cover_letter_filename": "Ankit_Parekh_Cover_Letter.pdf",
+    "resume_filename": "Alex_Candidate_Resume.pdf",
+    "cover_letter_filename": "Alex_Candidate_Cover_Letter.pdf",
     "sponsorship_quote": "Visa sponsorship available for this role",
     "posting_url": "https://jobs.ashbyhq.com/acme/frontend-dryrun",
     "ats_rubric_version": "ats-40-25-15-10-10",
