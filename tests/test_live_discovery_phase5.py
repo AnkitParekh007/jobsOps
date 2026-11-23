@@ -101,3 +101,11 @@ def test_max_limit_is_partial_and_no_stale_claim():
 def test_cli_network_not_called_without_explicit_registry(tmp_path, capsys):
     assert main(["--sources", str(tmp_path / "missing.json"), "--output", str(tmp_path / "result.json")]) == 2
     assert not (tmp_path / "result.json").exists()
+
+def test_worker_exception_does_not_claim_source_exhaustion():
+    def fail(url):
+        raise TimeoutError("synthetic timeout")
+    r = discover([greenhouse()], fetch=fail, delay_seconds=0)
+    assert r["counts"]["blocked"] == 1
+    assert r["sources"][0]["reason"] == "fetch_failed:TimeoutError"
+    assert r["sources"][0]["exhausted"] is False

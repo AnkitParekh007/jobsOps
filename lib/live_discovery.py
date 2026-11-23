@@ -211,7 +211,12 @@ def discover(
             "accepted_count": 0, "duplicate_count": 0, "invalid_count": 0,
             "reason": "",
         }
-        status, body = fetch(endpoint)
+        try:
+            status, body = fetch(endpoint)
+        except Exception as exc:  # noqa: BLE001 — source failure, never exhaustion
+            state["reason"] = f"fetch_failed:{type(exc).__name__}"
+            states.append(state)
+            continue
         state["http_status"] = status
         if status != 200:
             state["reason"] = f"http_{status}" if status else "network_failure"
