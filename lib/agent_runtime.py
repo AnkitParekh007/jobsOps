@@ -17,8 +17,9 @@ if str(_LIB) not in sys.path:
     sys.path.insert(0, str(_LIB))
 
 from contracts import POLICY_VERSION  # noqa: E402
+from policy import tool_allowed  # noqa: E402
 
-# Least-privilege tool scopes by role (enforced in argv / prompt contract; adapters may map).
+# Least-privilege tool scopes by role — enforced at the invoke / adapter boundary.
 ROLE_TOOL_SCOPES: dict[str, frozenset[str]] = {
     "discovery": frozenset({"http_fetch", "read_exclusion", "write_shard", "read_file", "write_file"}),
     "verification": frozenset({"read_file", "write_file", "http_fetch"}),
@@ -30,7 +31,66 @@ ROLE_TOOL_SCOPES: dict[str, frozenset[str]] = {
     "deterministic": frozenset(),
 }
 
+# Tools that must never be granted outside frontier_submit.
+PRIVILEGED_TOOLS = frozenset({"browser", "submit"})
+
 FORBIDDEN_FLAGS = frozenset({"--force", "--trust", "--yolo", "--dangerously-skip-permissions"})
+
+
+class ToolPermissionError(PermissionError):
+    """Raised when a role requests tools outside its allowlist."""
+
+
+# Runtime-only helpers that policy.py does not enumerate but are still role-scoped.
+_RUNTIME_FILE_HELPERS = frozenset({"read_file", "write_file", "read_exclusion"})
+
+
+def resolve_allowed_tools(
+    role: str,
+    requested: Optional[Sequence[str]] = None,
+) -> frozenset[str]:
+    """
+    Intersect requested tools with the role allowlist.
+    Discovery cannot obtain browser/submit even if an agent asks for them.
+    """
+    scopes = ROLE_TOOL_SCOPES.get(role)
+    if scopes is None:
+        raise ToolPermissionError(f"unknown role: {role}")
+    if requested is None:
+        allowed = frozenset(scopes)
+    else:
+        req = frozenset(str(t) for t in requested)
+        extra = req - scopes
+        if extra:
+            raise ToolPermissionError(
+                f"tools not permitted for role={role}: {', '.join(sorted(extra))}"
+            )
+        allowed = req
+    # Hard boundary: privileged tools only for frontier_submit.
+    if role != "frontier_submit" and (allowed & PRIVILEGED_TOOLS):
+        raise ToolPermissionError(
+            f"role={role} cannot use privileged tools: "
+            f"{', '.join(sorted(allowed & PRIVILEGED_TOOLS))}"
+        )
+    # Cross-check deterministic policy gates for tools policy knows about.
+    for tool in sorted(allowed):
+        if tool in _RUNTIME_FILE_HELPERS:
+            continue
+        verdict = tool_allowed(role, tool)
+        if verdict.code == "unknown_role":
+            continue
+        if not verdict.ok:
+            raise ToolPermissionError(verdict.message)
+    return allowed
+
+
+def assert_tool_permitted(role: str, tool: str) -> None:
+    """Sandbox boundary helper — call before dispatching any tool."""
+    allowed = resolve_allowed_tools(role)
+    if tool not in allowed:
+        raise ToolPermissionError(f"role={role} denied tool={tool}")
+    if tool in PRIVILEGED_TOOLS and role != "frontier_submit":
+        raise ToolPermissionError(f"privileged tool {tool} denied for role={role}")
 
 
 @dataclass
@@ -111,12 +171,30 @@ class AgentRuntime:
                 [],
                 message=f"runtime unavailable: {self.provider}",
             )
+        # Enforce role tool allowlist at the sandbox boundary before argv/spawn.
+        try:
+            allowed = resolve_allowed_tools(req.role, req.allowed_tools)
+        except ToolPermissionError as exc:
+            return InvokeResult(
+                False,
+                self.provider,
+                2,
+                False,
+                str(req.log_out),
+                [],
+                message=f"tool_permission_denied: {exc}",
+            )
+        # Mutate request to the resolved allowlist so adapters cannot widen scope.
+        req.allowed_tools = sorted(allowed)
         argv = self.build_argv(req)
         _assert_no_forbidden_flags(argv)
         req.log_out.parent.mkdir(parents=True, exist_ok=True)
         env = os.environ.copy()
         if req.extra_env:
             env.update({k: str(v) for k, v in req.extra_env.items()})
+        env["JOBOPS_AGENT_ROLE"] = req.role
+        env["JOBOPS_ALLOWED_TOOLS"] = ",".join(sorted(allowed))
+        env["JOBOPS_POLICY_VERSION"] = POLICY_VERSION
         # Explicit authorization boundary for submit role.
         if req.role == "frontier_submit":
             if os.environ.get("JOBOPS_ALLOW_SUBMIT", "0") != "1":
@@ -128,6 +206,19 @@ class AgentRuntime:
                     str(req.log_out),
                     argv,
                     message="submit blocked: JOBOPS_ALLOW_SUBMIT!=1",
+                )
+        # Non-submit roles must never receive privileged tool env grants.
+        if req.role != "frontier_submit":
+            granted = set(env.get("JOBOPS_ALLOWED_TOOLS", "").split(",")) - {""}
+            if granted & PRIVILEGED_TOOLS:
+                return InvokeResult(
+                    False,
+                    self.provider,
+                    2,
+                    False,
+                    str(req.log_out),
+                    argv,
+                    message="tool_permission_denied: privileged tools leaked to non-submit role",
                 )
         try:
             with req.log_out.open("w", encoding="utf-8") as logf:
@@ -212,10 +303,25 @@ class DeterministicRuntime(AgentRuntime):
         return [sys.executable, "-c", "raise SystemExit('deterministic_runtime_no_agent')"]
 
     def invoke(self, req: InvokeRequest) -> InvokeResult:
+        # Still enforce role tool allowlists even when no agent process is spawned.
+        try:
+            allowed = resolve_allowed_tools(req.role, req.allowed_tools)
+        except ToolPermissionError as exc:
+            return InvokeResult(
+                False,
+                self.provider,
+                2,
+                False,
+                str(req.log_out),
+                [],
+                message=f"tool_permission_denied: {exc}",
+            )
+        req.allowed_tools = sorted(allowed)
         req.log_out.parent.mkdir(parents=True, exist_ok=True)
         msg = (
             "deterministic-only mode: agent invocation skipped "
-            f"(role={req.role} prompt={req.prompt_file.name})"
+            f"(role={req.role} tools={','.join(sorted(allowed))} "
+            f"prompt={req.prompt_file.name})"
         )
         req.log_out.write_text(msg + "\n", encoding="utf-8")
         return InvokeResult(
@@ -253,17 +359,19 @@ class CursorAgentRuntime(AgentRuntime):
         info = self.detect()
         assert info.binary
         prompt = req.prompt_file.read_text(encoding="utf-8")
-        # Authorization boundary: role scopes recorded in env for the child / audit.
-        scopes = sorted(req.allowed_tools or ROLE_TOOL_SCOPES.get(req.role, frozenset()))
+        # Enforce allowlist at argv construction (defense in depth vs invoke()).
+        scopes = sorted(resolve_allowed_tools(req.role, req.allowed_tools))
         # Least privilege: --print only. Never --force/--trust/--yolo.
-        # Role scopes are exported via JOBOPS_ALLOWED_TOOLS for audit / future CLI flags.
-        _ = scopes  # reserved for adapter-specific allowlists when CLI supports them
+        # Embed allowlist in prompt header so the child cannot claim broader tools.
+        scope_header = (
+            f"[jobops-tool-allowlist role={req.role} tools={','.join(scopes)}]\n"
+        )
         return [
             info.binary,
             "--print",
             "--workspace",
             str(req.workspace),
-            prompt,
+            scope_header + prompt,
         ]
 
 
@@ -286,9 +394,11 @@ class ClaudeCodeRuntime(AgentRuntime):
     def build_argv(self, req: InvokeRequest) -> list[str]:
         info = self.detect()
         assert info.binary
+        scopes = sorted(resolve_allowed_tools(req.role, req.allowed_tools))
         prompt = req.prompt_file.read_text(encoding="utf-8")
+        header = f"[jobops-tool-allowlist role={req.role} tools={','.join(scopes)}]\n"
         # Prefer print/noninteractive; never skip permissions.
-        return [info.binary, "-p", "--output-format", "text", prompt]
+        return [info.binary, "-p", "--output-format", "text", header + prompt]
 
 
 class CodexRuntime(AgentRuntime):
@@ -305,8 +415,10 @@ class CodexRuntime(AgentRuntime):
     def build_argv(self, req: InvokeRequest) -> list[str]:
         info = self.detect()
         assert info.binary
+        scopes = sorted(resolve_allowed_tools(req.role, req.allowed_tools))
         prompt = req.prompt_file.read_text(encoding="utf-8")
-        return [info.binary, "exec", "--skip-git-repo-check", prompt]
+        header = f"[jobops-tool-allowlist role={req.role} tools={','.join(scopes)}]\n"
+        return [info.binary, "exec", "--skip-git-repo-check", header + prompt]
 
 
 class AntigravityRuntime(AgentRuntime):
@@ -330,8 +442,10 @@ class AntigravityRuntime(AgentRuntime):
     def build_argv(self, req: InvokeRequest) -> list[str]:
         info = self.detect()
         assert info.binary
+        scopes = sorted(resolve_allowed_tools(req.role, req.allowed_tools))
         prompt = req.prompt_file.read_text(encoding="utf-8")
-        return [info.binary, "run", "--prompt", prompt]
+        header = f"[jobops-tool-allowlist role={req.role} tools={','.join(scopes)}]\n"
+        return [info.binary, "run", "--prompt", header + prompt]
 
 
 ADAPTERS: dict[str, type[AgentRuntime]] = {
