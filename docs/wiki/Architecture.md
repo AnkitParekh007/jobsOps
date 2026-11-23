@@ -2,7 +2,7 @@
 
 jobsOps separates **control plane** (deterministic) from **agent runtime** (optional adapters). Logical frontiers describe capability boundaries; they are not a mandate to spawn one LLM process per cell.
 
-**Motion visuals** (browser): [Pipeline / DAG](../visuals/pipeline-dag.html) · [Trust boundary](../visuals/trust-boundary.html) · [Gallery](../visuals/index.html). Companions to the Mermaid below — not a production dashboard; submit/outreach remain **off**.
+**Motion visuals:** animated GIF previews are embedded on the [main README](../../README.md#architecture-at-a-glance). Full interactive pages (browser): [Pipeline / DAG](../visuals/pipeline-dag.html) · [Trust boundary](../visuals/trust-boundary.html) · [Gallery](../visuals/index.html). Companions to the Mermaid below — not a production dashboard; submit/outreach remain **off**.
 
 ## Control plane
 
