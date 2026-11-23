@@ -30,6 +30,7 @@ py-modules = [
   "agent_runtime",
   "agent_sandbox",
   "approval_controller",
+  "authority",
   "build_exclusion_index",
   "build_worker_prompts",
   "contracts",

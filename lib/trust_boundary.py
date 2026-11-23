@@ -4,16 +4,20 @@ Trust-boundary primitives for jobsOps.
 
 Untrusted agent processes must never inherit evidence-signing keys, approval
 credentials, or private connector tokens. Trusted issuance/approval runs only
-inside an explicit OrchestratorContext — clearing JOBOPS_AGENT_ROLE is not enough.
+inside an explicit OrchestratorContext backed by a ControlPlaneController grant —
+clearing JOBOPS_AGENT_ROLE is not enough and cannot mint authority.
 """
 from __future__ import annotations
 
 import os
-import secrets
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Iterator, Mapping, MutableMapping, Optional, Sequence
+from pathlib import Path
+from typing import TYPE_CHECKING, Iterator, Mapping, MutableMapping, Optional, Sequence
+
+if TYPE_CHECKING:
+    from authority import AuthorityGrant
 
 # Never copy these into agent child environments (exact names + prefixes).
 SECRET_ENV_EXACT = frozenset(
@@ -23,6 +27,8 @@ SECRET_ENV_EXACT = frozenset(
         "JOBOPS_APPROVAL_TOKEN",
         "JOBOPS_ORCHESTRATOR_TOKEN",
         "JOBOPS_ISSUANCE_AUTHORITY",
+        "JOBOPS_CONTROL_PLANE_TOKEN",
+        "JOBOPS_CONTROL_PLANE",
         "GOOGLE_APPLICATION_CREDENTIALS",
         "GOOGLE_API_KEY",
         "OPENAI_API_KEY",
@@ -43,9 +49,12 @@ SECRET_ENV_PREFIXES = (
     "JOBOPS_CONNECTOR_",
     "JOBOPS_APPROVAL_",
     "JOBOPS_HMAC_",
+    "JOBOPS_AUTHORITY_",
 )
 
 # Safe baseline for agent subprocesses (plus explicitly allowlisted extras).
+# Intentionally omits JOBOPS_HOME / PYTHONPATH so agents cannot reach the
+# control-plane authority key or import privileged issuers via inherited paths.
 _AGENT_ENV_BASE_ALLOW = frozenset(
     {
         "PATH",
@@ -60,9 +69,7 @@ _AGENT_ENV_BASE_ALLOW = frozenset(
         "TMP",
         "TEMP",
         "TZ",
-        "PYTHONPATH",
         "VIRTUAL_ENV",
-        "JOBOPS_HOME",
         "JOBOPS_RUNTIME",
         "JOBOPS_POLICY_VERSION",
         "JOBOPS_ALLOW_SUBMIT",
@@ -70,6 +77,7 @@ _AGENT_ENV_BASE_ALLOW = frozenset(
         "JOBOPS_ALLOW_FIXTURE_EVIDENCE",
         "JOBOPS_ALLOW_UNSANDBOXED_AGENT",
         "JOBOPS_REQUIRE_OS_SANDBOX",
+        "JOBOPS_AGENT_WORKSPACE",
         "NO_COLOR",
         "CI",
     }
@@ -107,6 +115,8 @@ class OrchestratorAuthority:
             {"approve", "issue_evidence", "reserve_submit", "record_approval"}
         )
     )
+    grant_id: str = ""
+    workspace_home: str = ""
 
     def permits(self, scope: str) -> bool:
         return scope in self.scopes
@@ -156,22 +166,34 @@ def is_untrusted_agent_role(role: str) -> bool:
 @contextmanager
 def OrchestratorContext(
     *,
-    principal: str = "orchestrator",
-    scopes: Optional[frozenset[str]] = None,
-    token: Optional[str] = None,
+    grant: "AuthorityGrant",
+    workspace_home: Path | str,
+    principal: Optional[str] = None,
 ) -> Iterator[OrchestratorAuthority]:
     """
-    Enter the trusted control plane. Nested contexts are allowed.
-    Untrusted agent roles cannot open this context.
+    Enter the trusted control plane using a verified AuthorityGrant.
+
+    Application code cannot self-mint privileges: a ControlPlaneController-issued
+    grant is required. Untrusted agent roles cannot open this context even after
+    clearing JOBOPS_AGENT_ROLE in a contaminated process (grant verification
+    still requires the workspace authority key + non-agent role).
     """
+    from authority import note_agent_role, verify_authority_grant
+
     role = agent_role_from_env()
+    note_agent_role(role)
     if is_untrusted_agent_role(role):
         raise PermissionError(f"orchestrator_context_forbidden_in_agent_role:{role}")
+    home = Path(workspace_home).expanduser().resolve()
+    verified = verify_authority_grant(grant, workspace_home=home)
+    if principal is not None and verified.principal != principal:
+        raise PermissionError("orchestrator_principal_mismatch")
     auth = OrchestratorAuthority(
-        token=token or secrets.token_hex(32),
-        principal=principal,
-        scopes=scopes
-        or frozenset({"approve", "issue_evidence", "reserve_submit", "record_approval"}),
+        token=verified.signature,
+        principal=verified.principal,
+        scopes=verified.scopes,
+        grant_id=verified.grant_id,
+        workspace_home=str(home),
     )
     _stack().append(auth)
     try:
@@ -182,6 +204,22 @@ def OrchestratorContext(
             stack.pop()
         elif auth in stack:
             stack.remove(auth)
+
+
+@contextmanager
+def open_orchestrator(
+    workspace_home: Path | str,
+    *,
+    principal: str = "orchestrator",
+    scopes: Optional[Sequence[str]] = None,
+) -> Iterator[OrchestratorAuthority]:
+    """Bootstrap control plane (if needed), issue a grant, and enter context."""
+    from authority import issue_test_grant
+
+    home = Path(workspace_home).expanduser().resolve()
+    grant = issue_test_grant(home, principal=principal, scopes=scopes)
+    with OrchestratorContext(grant=grant, workspace_home=home) as auth:
+        yield auth
 
 
 def build_agent_subprocess_env(
@@ -197,9 +235,13 @@ def build_agent_subprocess_env(
     """
     Build an explicit minimal environment for untrusted agent subprocesses.
 
-    Does **not** inherit the full parent environment. Secrets and approval
-    credentials are stripped even if present in ``extra``.
+    Does **not** inherit the full parent environment. Secrets, approval
+    credentials, JOBOPS_HOME, and PYTHONPATH are stripped even if present in
+    ``extra``.
     """
+    from authority import note_agent_role
+
+    note_agent_role(role)
     parent = parent_env if parent_env is not None else os.environ
     out: dict[str, str] = {}
     for key in _AGENT_ENV_BASE_ALLOW:
@@ -212,7 +254,13 @@ def build_agent_subprocess_env(
         for key, val in extra.items():
             if is_secret_env_key(key):
                 continue
-            if key in {"JOBOPS_ALLOWED_TOOLS", "JOBOPS_AGENT_ROLE", "JOBOPS_CAPABILITY_TOKEN"}:
+            if key in {
+                "JOBOPS_ALLOWED_TOOLS",
+                "JOBOPS_AGENT_ROLE",
+                "JOBOPS_CAPABILITY_TOKEN",
+                "JOBOPS_HOME",
+                "PYTHONPATH",
+            }:
                 continue
             if key in _AGENT_ENV_BASE_ALLOW or key.startswith("LC_"):
                 out[key] = str(val)
@@ -223,6 +271,15 @@ def build_agent_subprocess_env(
     if policy_version:
         out["JOBOPS_POLICY_VERSION"] = policy_version
     out["JOBOPS_SANDBOX_MODE"] = sandbox_mode
+    # Hard deny paths / flags that would expose the control plane or signing material.
+    for denied in (
+        "JOBOPS_HOME",
+        "PYTHONPATH",
+        "JOBOPS_USER_WORKSPACE",
+        "JOBOPS_CONTROL_PLANE",
+        "JOBOPS_CONTROL_PLANE_TOKEN",
+    ):
+        out.pop(denied, None)
     for key in list(out):
         if is_secret_env_key(key):
             out.pop(key, None)
@@ -233,6 +290,14 @@ def assert_env_has_no_secrets(environ: Mapping[str, str]) -> None:
     leaked = sorted(k for k in environ if is_secret_env_key(k))
     if leaked:
         raise PermissionError(f"secret_env_leak:{','.join(leaked)}")
+
+
+def assert_agent_env_isolated(environ: Mapping[str, str]) -> None:
+    """Agent env must omit secrets and control-plane path hints."""
+    assert_env_has_no_secrets(environ)
+    for denied in ("JOBOPS_HOME", "PYTHONPATH", "JOBOPS_USER_WORKSPACE"):
+        if denied in environ:
+            raise PermissionError(f"agent_env_forbidden_key:{denied}")
 
 
 def redact_env_for_log(environ: Mapping[str, str]) -> dict[str, str]:

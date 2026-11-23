@@ -110,6 +110,12 @@ def ensure_workspace(home: Optional[Path] = None) -> dict[str, Path]:
     paths = workspace_paths(home)
     for key in ("home", "secrets", "state", "backups", "artifacts"):
         paths[key].mkdir(parents=True, exist_ok=True)
+    # Restrict secrets/state to the installing user (best-effort on all platforms).
+    for key in ("secrets", "state"):
+        try:
+            os.chmod(paths[key], 0o700)
+        except OSError:
+            pass
     gitignore = paths["home"] / ".gitignore"
     if not gitignore.is_file():
         gitignore.write_text("*\n!.gitignore\n", encoding="utf-8")
