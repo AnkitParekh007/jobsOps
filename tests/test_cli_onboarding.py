@@ -1,4 +1,4 @@
-"""P1.8 — portable CLI init/doctor smoke."""
+"""P1.8 — portable CLI init/doctor smoke + preview mode."""
 from __future__ import annotations
 
 import json
@@ -20,3 +20,14 @@ def test_init_and_doctor(tmp_path: Path, capsys):
     doc = json.loads(capsys.readouterr().out)
     assert doc["ok"] is True
     assert doc["checks"]["submit_default_off"] is True
+
+
+def test_preview_is_non_mutating(tmp_path: Path, capsys):
+    rc = main(["run", "--workflow", "discovery", "--preview", "--runtime", "deterministic"])
+    assert rc == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["ok"] is True
+    assert plan["preview"] is True
+    assert plan["mutating"] is False
+    assert plan["invoked_harness"] is False
+    assert "no harness" in plan["preview_semantics"]

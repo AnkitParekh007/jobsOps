@@ -166,6 +166,41 @@ def cmd_run(args: argparse.Namespace) -> int:
         env["JOBOPS_HOME"] = str(Path(args.workspace).expanduser())
     if args.runtime:
         env["JOBOPS_RUNTIME"] = args.runtime
+
+    # --preview: genuinely non-mutating plan. Does not invoke the harness.
+    if getattr(args, "preview", False):
+        from agent_runtime import detect_all, select_runtime
+
+        selected = select_runtime(args.runtime or env.get("JOBOPS_RUNTIME")).detect()
+        plan = {
+            "ok": True,
+            "mode": "preview",
+            "preview": True,
+            "mutating": False,
+            "invoked_harness": False,
+            "workflow": args.workflow,
+            "would_invoke": [str(harness)]
+            + (["--pipeline-only"] if args.workflow == "pipeline" or args.pipeline_only else []),
+            "gates": {
+                "JOBOPS_ALLOW_SUBMIT": "0",
+                "JOBOPS_ENABLE_LIVE_SUBMIT": "0",
+                "JOBOPS_ENABLE_OUTREACH_SEND": "0",
+                "SUBMIT_AGENT": "0",
+            },
+            "runtime_selected": selected.to_dict(),
+            "runtimes_detected": [r.to_dict() for r in detect_all()],
+            "preview_semantics": (
+                "no harness execution; no ledger/handoff/report writes; "
+                "no network fetch/submit/outreach — plan only"
+            ),
+            "contrast_with_dry_run": (
+                "--dry-run still invokes the harness and may write local state; "
+                "--preview never mutates"
+            ),
+        }
+        print(json.dumps(plan, indent=2))
+        return 0
+
     cmd = [str(harness)]
     if args.workflow == "pipeline" or args.pipeline_only:
         cmd.append("--pipeline-only")
@@ -195,6 +230,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "invoking": cmd,
                 "workflow": args.workflow,
                 "dry_run": bool(args.dry_run),
+                "preview": False,
                 "dry_run_semantics": (
                     "external_submit_and_outreach_disabled; local_state_may_mutate"
                     if args.dry_run
@@ -244,7 +280,15 @@ def build_parser() -> argparse.ArgumentParser:
             "Disable external submit/outreach (JOBOPS_ALLOW_SUBMIT=0, "
             "JOBOPS_ENABLE_LIVE_SUBMIT=0, SUBMIT_AGENT=0). "
             "Local ledger/handoff/report artifacts may still be written — "
-            "not a fully non-mutating rehearsal."
+            "not a fully non-mutating rehearsal. Prefer --preview for zero mutation."
+        ),
+    )
+    p_run.add_argument(
+        "--preview",
+        action="store_true",
+        help=(
+            "Genuinely non-mutating plan mode: print what would run (workflow, "
+            "gates, runtime) without invoking the harness or writing ledger/handoff/report."
         ),
     )
     p_run.add_argument("--pipeline-only", action="store_true")

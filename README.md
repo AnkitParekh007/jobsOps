@@ -12,8 +12,10 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 python -m pip install -e ".[dev]"
 jobops init
 jobops doctor
-jobops run --workflow discovery --dry-run
-# --dry-run disables external submit/outreach; local ledger/handoff may still update
+jobops run --workflow discovery --preview   # non-mutating plan (no harness)
+jobops run --workflow discovery --dry-run   # harness runs; submit/outreach off; local state may update
+# Set JOBOPS_EVIDENCE_SECRET (or JOBOPS_HOME/secrets/evidence_hmac.key) — no fallback secret
+# See docs/THREAT-MODEL.md and docs/RUNTIME-CAPABILITIES.md
 jobops report
 ```
 

@@ -10,10 +10,10 @@
 4. Choose provider: Claude Code, Codex CLI, Cursor Agent CLI, Antigravity if suitable, direct model API or deterministic-only mode.
 5. Configure required public sources, and optional email/Sheets/Drive/calendar/browser integrations.
 6. Choose research-only, prepare-for-review (default), or separately authorized controlled submission; set quota and consent restrictions.
-7. Run `jobops doctor`, then `jobops run --workflow discovery --dry-run`.
-   **Dry-run semantics:** disables external submit/outreach (`JOBOPS_ALLOW_SUBMIT=0`,
-   `JOBOPS_ENABLE_LIVE_SUBMIT=0`, `SUBMIT_AGENT=0`). Local ledger, handoff-state, and
-   report files may still be written — it is not a fully non-mutating rehearsal.
+7. Run `jobops doctor`, then prefer `jobops run --workflow discovery --preview` for a
+   **non-mutating** plan (no harness, no ledger/handoff writes).
+   Use `--dry-run` only when you intentionally want the harness to run with external
+   submit/outreach disabled — local ledger/handoff/report files may still be written.
 8. Run `jobops run --workflow daily-search`; inspect `jobops report`, approvals and evidence.
 9. Optionally enable scheduling or supported event watchers. Verify a run persisted on restart.
 
@@ -25,10 +25,16 @@ source .venv/bin/activate
 python -m pip install -e .
 jobops init
 jobops doctor
+jobops run --workflow discovery --preview
 jobops run --workflow discovery --dry-run
 jobops run --workflow daily-search
 jobops report
 ```
+
+Provision an installation-specific evidence key before any authorize path outside tests:
+`export JOBOPS_EVIDENCE_SECRET="$(openssl rand -hex 32)"` or write
+`$JOBOPS_HOME/secrets/evidence_hmac.key` (mode `0600`). There is no built-in fallback secret.
+
 
 Windows activation: `.venv\Scripts\activate`. Documentation must be updated when actual installation and commands are tested.
 
