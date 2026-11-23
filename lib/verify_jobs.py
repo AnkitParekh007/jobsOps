@@ -6,9 +6,6 @@ import argparse
 import json
 import re
 import sys
-import urllib.error
-import urllib.parse
-import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, MutableMapping, Optional
@@ -35,6 +32,7 @@ from policy import (  # noqa: E402
     is_hard_miss,
     text_blob,
 )
+from url_safety import safe_http_fetch, validate_fetch_url  # noqa: E402
 
 PRODUCER = "verify_jobs"
 ARTIFACT_TYPE = "eligibility_decision"
@@ -68,33 +66,8 @@ class VerifyResult:
 
 
 def http_fetch(url: str, *, timeout: float = 12.0) -> tuple[int, str]:
-    scheme = urllib.parse.urlparse(url).scheme.lower()
-    if scheme not in {"http", "https"}:
-        return 0, f"fetch_error:disallowed_scheme:{scheme or 'missing'}"
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "JobOps-verify/1.0 (+local research)"},
-        method="GET",
-    )
-    try:
-        # Scheme allowlisted above (http/https only).
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
-            raw = resp.read(400_000)
-            charset = resp.headers.get_content_charset() or "utf-8"
-            try:
-                text = raw.decode(charset, errors="replace")
-            except LookupError:
-                text = raw.decode("utf-8", errors="replace")
-            return int(resp.status), text
-    except urllib.error.HTTPError as exc:
-        body = ""
-        try:
-            body = exc.read(50_000).decode("utf-8", errors="replace")
-        except Exception:  # noqa: BLE001
-            body = ""
-        return int(exc.code), body
-    except Exception as exc:  # noqa: BLE001
-        return 0, f"fetch_error:{type(exc).__name__}:{exc}"
+    """Outbound fetch with SSRF / redirect controls (see url_safety)."""
+    return safe_http_fetch(url, timeout=timeout)
 
 
 def check_availability(
@@ -308,8 +281,41 @@ def verify_match(
         )
         return VerifyResult(decision, "Skipped", "unknown", blocking_reasons=["missing_canonical_url"])
 
-    canon = normalize_url(url)
-    employer = normalize_url(str(match.get("employer_or_ats_url") or canon))
+    # Preflight SSRF / scheme / host validation before any network use of the URL.
+    url_check = validate_fetch_url(url, resolve_dns=False)
+    if not url_check.ok:
+        decision = make_eligibility_decision(
+            job_key="url:unsafe",
+            canonical_url="https://invalid.local/unsafe",
+            decision="Skipped",
+            blocking_reasons=[f"unsafe_url:{url_check.reason}"],
+            evidence_refs=[],
+            hard_miss=False,
+            policy_version=policy_version,
+            notes=f"url_safety:{url_check.reason}",
+        )
+        return VerifyResult(
+            decision, "Skipped", "unknown", blocking_reasons=decision["blocking_reasons"]
+        )
+
+    canon = normalize_url(url_check.normalized or url)
+    employer_raw = str(match.get("employer_or_ats_url") or canon)
+    employer_check = validate_fetch_url(employer_raw, resolve_dns=False)
+    if not employer_check.ok:
+        decision = make_eligibility_decision(
+            job_key=job_key_from_url(canon),
+            canonical_url=canon,
+            decision="Skipped",
+            blocking_reasons=[f"unsafe_employer_url:{employer_check.reason}"],
+            evidence_refs=[],
+            hard_miss=False,
+            policy_version=policy_version,
+            notes=f"url_safety:{employer_check.reason}",
+        )
+        return VerifyResult(
+            decision, "Skipped", "unknown", blocking_reasons=decision["blocking_reasons"]
+        )
+    employer = normalize_url(employer_check.normalized or employer_raw)
     jk = str(match.get("job_key") or job_key_from_url(canon))
     refs = [employer]
 
