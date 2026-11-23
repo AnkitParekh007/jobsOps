@@ -1,8 +1,10 @@
-# Harness contract (local Mac) — JobOps Phase 4
+# Harness contract — jobsOps
 
-`./run` orchestrates **F01 context**, **HTTP-only discovery workers** (lane × country, parallel), **merge + ledger**, **F03 verify**, **F04 rank**, a **frontier rank-report** agent (optional gated submit), **validate**, **F10 report enrich + Sheets/Drive adapters**, optional **F07 pipeline / F06 outreach / F08 learning**, and **ledger finalize**.
+`./run` (or `jobops run`) orchestrates **F01 context**, **HTTP-only discovery workers** (lane × country, parallel), **merge + ledger**, **F03 verify**, **F04 rank**, a **frontier rank-report** agent (optional gated submit), **validate**, **F10 report enrich + Sheets/Drive offline adapters**, optional **F07 pipeline / F06 outreach / F08 learning**, and **ledger finalize**.
 
-**Pipeline-only mode** skips discovery: `./run --pipeline-only` or `JOBOPS_MODE=pipeline`.
+Agents are invoked through `lib/agent_runtime.py` (`JOBOPS_RUNTIME=auto|cursor|claude_code|codex|antigravity|deterministic`). Unrestricted `--force --trust` is forbidden. Failed/timed-out workers set `exhausted: false`.
+
+**Pipeline-only mode** skips discovery: `./run --pipeline-only` or `JOBOPS_MODE=pipeline`. Requires explicit `PIPELINE_INBOX` (test fixtures are not live defaults).
 
 ## Pipeline (full)
 
@@ -28,15 +30,15 @@ context → inbox_outcomes (P01) → report_enrich → sheets_sync → drive_fol
 7. Ledger checkpoints merge (`handoff_match` / `handoff_state` artifacts).
 8. **Verify (F03)** — `lib/verify_jobs.py` after merge: V01 availability, V04 duplicates, V02/V03 hard-miss + sponsorship. Writes `EligibilityDecision` artifacts; enriches match statuses. Optional thin agent when `VERIFY_AGENT=1`.
 9. **Rank (F04)** — `lib/rank_opportunities.py` (I01–I04) after verify, before frontier. Writes `runs/<id>/ranked-shortlist.json` (top-5 Eligible + Needs review human queue). No fictional % certainty.
-10. **Frontier rank-report** — `agents/frontier-rank-report.md` every run. HTTP expand (`frontier-expand.json`, ≤20) only if floor unmet; harness re-merges, re-verifies, re-ranks. Optional **frontier-submit** (`agents/frontier-submit.md`) only when `SUBMIT_AGENT=1` **and** `lib/submission_authorize.py --check-only` allows (shortlist non-empty + daily cap remaining). Authorize gate before any browser.
+10. **Frontier rank-report** — `agents/frontier-rank-report.md` every run. HTTP expand (`frontier-expand.json`, ≤20) only if floor unmet; harness re-merges, re-verifies, re-ranks. Optional **frontier-submit** only when `SUBMIT_AGENT=1` **and** `JOBOPS_ALLOW_SUBMIT=1` **and** `JOBOPS_ENABLE_LIVE_SUBMIT=1` **and** authorize `--check-only` allows. Authorize ignores agent checklist booleans; requires independent evidence objects.
 11. Validator accepts when floor met **or** honest exhaustion; requires `last-run-report.md`; emits `eligible_count`.
 12. **Report enrich (R03/R04)** — `lib/run_report.py` writes `run-metrics.json` + `reliability-alerts.json` and appends Phase 4 metrics to the report (eligible_count, verify stats, wall time hooks, stubbed workers, cap remaining; stuck locks / missing receipts).
-13. **Sheets sync plan (R01)** — `lib/sheets_sync.py` writes idempotent `sheets-sync-plan.json` (offline when Google creds missing; tests never require live API).
-14. **Drive folders (R02)** — `lib/drive_artifacts.py` ensures org/role folder paths by `job_key` under `runs/<id>/drive-mirror/`.
+13. **Sheets sync plan (R01)** — `lib/sheets_sync.py` writes idempotent offline plans (`integration=offline_plan`, `live_api=false`). Live Google Sheets API is **not** implemented.
+14. **Drive folders (R02)** — `lib/drive_artifacts.py` ensures **local mirror** folders by `job_key` (`live_drive_api=false`). Live Google Drive API is **not** implemented.
 15. **Optional event slices** (not concurrent LLM frontiers):
-    - `PIPELINE_INBOX=...` → P01 inbox skim (`lib/inbox_outcomes.py`)
-    - `OUTREACH_DRAFTS=1` + `outreach-candidates.json` → draft-only F06 (`lib/outreach_drafts.py`); **no auto-send**
-    - `LEARNING_BATCH=1` → F08 weekly proposals (`lib/learning_proposals.py`); **never mutates `lib/policy.py`**
+    - `PIPELINE_INBOX=...` (required path; never defaults to `evals/fixtures`) → P01 inbox skim
+    - `OUTREACH_DRAFTS=1` + candidates → draft-only F06; **no auto-send** (`JOBOPS_ENABLE_OUTREACH_SEND` default 0)
+    - `LEARNING_BATCH=1` → F08 proposals; **never mutates policy**
 16. Ledger finalize — mark run complete, release run lock.
 
 ## Speed defaults
@@ -49,9 +51,10 @@ context → inbox_outcomes (P01) → report_enrich → sheets_sync → drive_fol
 | Worker timeout | 720s | `WORKER_TIMEOUT_SEC` |
 | Ledger DB | `state/jobops.db` | `JOBOPS_DB` |
 | Verify agent | off | `VERIFY_AGENT=1` |
-| Submit agent | off | `SUBMIT_AGENT=1` (still gated by authorize check) |
+| Submit agent | off | `SUBMIT_AGENT=1` + `JOBOPS_ALLOW_SUBMIT=1` + `JOBOPS_ENABLE_LIVE_SUBMIT=1` |
+| Runtime | `auto` | `JOBOPS_RUNTIME=cursor\|claude_code\|codex\|antigravity\|deterministic` |
 | JobOps mode | `full` | `JOBOPS_MODE=pipeline` or `./run --pipeline-only` |
-| Pipeline inbox | unset (full) / E09 fixture (pipeline) | `PIPELINE_INBOX` |
+| Pipeline inbox | unset (must set explicitly) | `PIPELINE_INBOX` (fixtures refused) |
 | Outreach drafts | off | `OUTREACH_DRAFTS=1` |
 | Learning batch | off | `LEARNING_BATCH=1` |
 

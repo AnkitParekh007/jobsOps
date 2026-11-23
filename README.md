@@ -1,47 +1,42 @@
-# cursor-job-automations
+# jobsOps
 
-Fast local job-apply harness for Ankit Parekh’s Mac.
+Provider-neutral, policy-governed job search operations. Discovery, verification, ranking, and optional controlled submission run through a deterministic harness — not a single-vendor prompt.
 
-**System overview (agents, handoffs, harness, evals):** [SYSTEM.md](./SYSTEM.md)
+**Status:** foundation in progress. Not production-ready. External submit and outreach send are **off by default**.
 
-```text
-./run
-  → F01 context + SQLite lock (state/jobops.db)
-  → exclusion index
-  → HTTP workers in parallel (fde-de, frontend-de, fde-ie)  target 15 each
-  → ledger ingest + merge_shards.py → handoff-state.json   (default floor 40)
-  → verify_jobs.py (V01–V04; optional VERIFY_AGENT=1)
-  → rank_opportunities.py (I01–I04) → ranked-shortlist.json (top 5)
-  → frontier-rank-report (always); optional frontier-submit if SUBMIT_AGENT=1 + authorize allows
-  → validate + ledger finalize
-```
-
-Phase 1–3 unit evals: `python3 -m pytest tests/ -q` (requires `pip install -r requirements.txt`).
-
-## Run
+## Quick start
 
 ```bash
-cd /Users/ankitparekh/Desktop/Projects/Automations/Job-Automations/cursor-job-automations
-chmod +x run
-./run
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python -m pip install -e ".[dev]"
+jobops init
+jobops doctor
+jobops run --workflow discovery --dry-run
+jobops report
 ```
 
-Env: `HANDOFF_FLOOR=40` (default) · `VERIFY_AGENT=0` · `SUBMIT_AGENT=0` (submit still gated by `lib/submission_authorize.py --check-only`).
+Private candidate facts live under `JOBOPS_HOME` (OS-appropriate Application Support / XDG path), **outside** this repository.
 
-Workers are **browser-forbidden** so they can run in parallel safely. Daily submit cap remains **1**.
+## Runtime adapters
 
-## Key files
+Set `JOBOPS_RUNTIME` to one of: `auto`, `cursor`, `claude_code`, `codex`, `antigravity`, `deterministic`.
 
-| Path | Role |
-|---|---|
-| `workers/manifest.json` | Workers, `parallel: true`, `target_matches: 15` |
-| `agents/discovery-worker.md` | HTTP discovery sub-agent |
-| `agents/verification.md` | Thin F03 agent (ambiguous sponsorship JSON only) |
-| `agents/frontier-rank-report.md` | Default frontier (report) |
-| `agents/frontier-submit.md` | Gated submit path |
-| `agents/frontier.md` | Compat redirect |
-| `lib/merge_shards.py` | Merge + floor |
-| `lib/verify_jobs.py` | F03 verification after merge |
-| `lib/rank_opportunities.py` | F04 ranking after verify |
-| `lib/submission_authorize.py` | F09 authorize gate before browser |
-| `runs/<run_id>/` | Shards + logs + ranked-shortlist |
+The harness never passes unrestricted `--force --trust`. Submit requires explicit:
+
+```bash
+JOBOPS_ALLOW_SUBMIT=1 JOBOPS_ENABLE_LIVE_SUBMIT=1 SUBMIT_AGENT=1
+```
+
+## Docs
+
+- [AGENTS.md](AGENTS.md) — agent authority and constraints
+- [docs/USER-GUIDE.md](docs/USER-GUIDE.md) — install / schedule UX
+- [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md) — audit rubric (not a certification)
+- [harness-contract.md](harness-contract.md) — `./run` contract
+
+## Tests
+
+```bash
+python -m pytest -q
+```

@@ -1,6 +1,6 @@
 # User guide: installation, manual, scheduled and event-triggered runs
 
-**Status:** Target UX specification. Commands other than plain Git/Python are not functional until Cursor implements them and acceptance tests pass.
+**Status:** Foundation CLI implemented (`jobops init|doctor|report|run`). Schedule/event watchers remain target UX. External submit/outreach send stay off by default. Not production-ready.
 
 ## The universal path
 

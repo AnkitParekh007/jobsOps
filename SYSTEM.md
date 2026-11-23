@@ -1,8 +1,10 @@
-# cursor-job-automations — system overview (JobOps Phase 4)
+# jobsOps — system overview
 
-Local Mac job-apply automation for Ankit Parekh. Quality and evidence beat volume. This doc describes the **current** multi-agent design after Phase 4 (pipeline, outreach drafts, learning proposals, reporting adapters on top of Phases 1–3).
+Provider-neutral job-search operations harness. Quality and evidence beat volume. Candidate facts load from the private `JOBOPS_HOME` workspace — never hardcoded personal biography in the public repo. External submit and outreach send remain **off by default**.
 
-Related contracts (do not duplicate indefinitely): `harness-contract.md`, `scheduled-task-prompt.md`, `agents/*.md`, `workers/manifest.json`, `contracts/*.schema.json`.
+Related contracts: `harness-contract.md`, `docs/USER-GUIDE.md`, `agents/*.md`, `workers/manifest.json`, `contracts/*.schema.json`.
+
+**Not production-ready.** See `docs/PRODUCTION-READINESS.md`.
 
 ---
 
@@ -13,7 +15,7 @@ Related contracts (do not duplicate indefinitely): `harness-contract.md`, `sched
 | Role | Count per run | How launched | Prompt |
 |---|---:|---|---|
 | **Frontier rank-report** | **1** (plus optional **finish** re-invoke) | Sequential after rank | `agents/frontier-rank-report.md` (+ SOP appended) |
-| **Frontier submit** | **0–1** | Only if `SUBMIT_AGENT=1` and authorize `--check-only` allows | `agents/frontier-submit.md` |
+| **Frontier submit** | **0–1** | Only if `SUBMIT_AGENT=1` **and** `JOBOPS_ALLOW_SUBMIT=1` **and** `JOBOPS_ENABLE_LIVE_SUBMIT=1` **and** authorize `--check-only` allows | `agents/frontier-submit.md` |
 | **Discovery workers (sub-agents)** | **3** (manifest-driven) | Parallel HTTP by default | `agents/discovery-worker.md` + per-shard inject |
 | **Verification (thin, optional)** | **0–1** | When `VERIFY_AGENT=1` and ambiguous sponsorship queue non-empty | `agents/verification.md` |
 | **Outreach drafts (optional)** | **0–1** | When `OUTREACH_DRAFTS=1` + candidates JSON | `agents/outreach-draft.md` |

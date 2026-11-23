@@ -93,8 +93,10 @@ def build_sync_plan(
         "ok": True,
         "producer": PRODUCER,
         "tab": tab,
+        "integration": "offline_plan",
         "live_api": False,
-        "reason": "offline_plan_no_live_credentials",
+        "live_sheets_implemented": False,
+        "reason": "offline_plan_helper_only — Google Sheets API not invoked",
         "created_at": utc_now_iso(),
         "policy_version": POLICY_VERSION,
         "row_count": len(rows_sorted),
@@ -146,13 +148,21 @@ def sync_or_plan(
     Tests must never require live Google credentials.
     """
     plan = plan_from_ledger(ledger, prior_plan_path=prior_plan_path)
-    if force_offline or not live_sheets_available():
+    creds = live_sheets_available()
+    # Truthful status: offline planning helper is implemented; live Sheets API is not.
+    plan["live_sheets_implemented"] = False
+    plan["credentials_present"] = creds
+    if force_offline or not creds:
+        plan["integration"] = "offline_plan"
         plan["live_api"] = False
-        plan["reason"] = "offline_plan_no_live_credentials"
+        plan["reason"] = "offline_plan_helper_only — no live Google Sheets sync"
     else:
-        # Live path reserved — still emit plan; do not call Sheets from tests.
+        plan["integration"] = "offline_plan"
         plan["live_api"] = False
-        plan["reason"] = "live_path_stubbed_use_plan"
+        plan["reason"] = (
+            "credentials present but live Google Sheets adapter is not implemented; "
+            "emitting offline plan only"
+        )
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     Path(out_path).write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
     return plan

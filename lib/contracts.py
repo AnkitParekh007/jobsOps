@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, MutableMapping, Optional
 
 try:
-    import jsonschema
     from jsonschema import Draft202012Validator
 except ImportError as exc:  # pragma: no cover
     raise SystemExit(
@@ -221,7 +220,6 @@ def attach_eligible_count(state: MutableMapping[str, Any]) -> MutableMapping[str
 def main() -> int:
     """CLI: validate a JSON file against a named schema."""
     import argparse
-    import sys
 
     ap = argparse.ArgumentParser(description="Validate JobOps contract JSON")
     ap.add_argument("schema", help="schema file name under contracts/")

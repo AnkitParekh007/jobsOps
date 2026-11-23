@@ -7,7 +7,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping
 
 _LIB = Path(__file__).resolve().parent
 if str(_LIB) not in sys.path:
@@ -72,7 +72,10 @@ def ensure_folder_paths(
         "created_at": utc_now_iso(),
         "policy_version": POLICY_VERSION,
         "producer": PRODUCER,
+        "integration": "local_mirror",
         "live_drive_api": False,
+        "live_drive_implemented": False,
+        "reason": "local folder mirror only — Google Drive API not invoked",
     }
     marker.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
     return meta
@@ -105,7 +108,10 @@ def ensure_batch(
         "root": str(root),
         "folders": results,
         "count": len(results),
+        "integration": "local_mirror",
         "live_drive_api": False,
+        "live_drive_implemented": False,
+        "reason": "local folder mirror only — Google Drive API not invoked",
         "policy_version": POLICY_VERSION,
     }
 

@@ -37,7 +37,7 @@ def test_learning_events_are_proposal_only():
 
 def test_policy_proposal_never_writes_policy_file():
     before = _policy_digest()
-    jobs = json.loads((FIX / "learning_batch_jobs.json").read_text(encoding="utf-8"))["jobs"]
+    assert (FIX / "learning_batch_jobs.json").is_file()
     prop = policy_proposal(lane_country="Germany", matured_apps=2)
     assert prop["mutates_policy"] is False
     validate(prop, "learning-event.schema.json")

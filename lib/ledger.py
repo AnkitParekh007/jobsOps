@@ -7,7 +7,6 @@ import json
 import sqlite3
 import sys
 from contextlib import contextmanager
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional
 
