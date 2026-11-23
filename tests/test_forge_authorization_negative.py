@@ -76,15 +76,18 @@ def _authorize(pkg: dict, tmp_path: Path, monkeypatch) -> object:
     acquire_form_lock(led, canonical_url=pkg["canonical_url"], run_id="forge-1")
     # Durable approval bound to user/job/session/document — required for consent.
     evidence = pkg.get("evidence_package") or {}
-    led.record_approval(
-        approval_id=str(evidence.get("approval_id") or APPROVAL),
-        user_id=str(evidence.get("user_id") or USER),
-        job_key=str(pkg.get("job_key") or ""),
-        session_id=str(evidence.get("session_id") or SESSION),
-        artifact_fingerprint=str(pkg.get("pdf_fingerprint") or ""),
-        status="approved",
-        run_id="forge-1",
-    )
+    from trust_boundary import OrchestratorContext
+
+    with OrchestratorContext(principal="pytest"):
+        led.record_approval(
+            approval_id=str(evidence.get("approval_id") or APPROVAL),
+            user_id=str(evidence.get("user_id") or USER),
+            job_key=str(pkg.get("job_key") or ""),
+            session_id=str(evidence.get("session_id") or SESSION),
+            artifact_fingerprint=str(pkg.get("pdf_fingerprint") or ""),
+            status="approved",
+            run_id="forge-1",
+        )
     result = authorize_submission(
         pkg,
         run_id="forge-1",

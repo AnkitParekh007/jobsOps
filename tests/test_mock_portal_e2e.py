@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from evidence_issuer import TrustedEvidenceIssuer
 from ledger import Ledger
 from submission_authorize import (
@@ -19,6 +21,7 @@ from submission_authorize import (
     fingerprint_bytes,
     record_submission_outcome,
 )
+from trust_boundary import OrchestratorContext
 
 SECRET = b"jobops-mock-portal-e2e-secret"
 USER = "user-mock"
@@ -47,51 +50,51 @@ def test_mock_portal_happy_path_authorize_and_receipt(tmp_path: Path, monkeypatc
     led = Ledger(tmp_path / "mock.db")
     led.start_run("mock-e2e", floor=40, phase="authorize")
     acquire_form_lock(led, canonical_url=url, run_id="mock-e2e")
-    led.record_approval(
-        approval_id=APPROVAL,
-        user_id=USER,
-        job_key=job_key,
-        session_id=SESSION,
-        artifact_fingerprint=fp,
-        document_path=str(pdf),
-        status="approved",
-        run_id="mock-e2e",
-        decided_by="user",
-    )
+    with OrchestratorContext(principal="pytest"):
+        led.record_approval(
+            approval_id=APPROVAL,
+            user_id=USER,
+            job_key=job_key,
+            session_id=SESSION,
+            artifact_fingerprint=fp,
+            document_path=str(pdf),
+            status="approved",
+            run_id="mock-e2e",
+            decided_by="user",
+        )
+        issuer = TrustedEvidenceIssuer(led, secret=SECRET)
+        evidence = issuer.issue_package(
+            approval_id=APPROVAL,
+            user_id=USER,
+            job_key=job_key,
+            session_id=SESSION,
+            artifact_fingerprint=fp,
+        )
 
-    issuer = TrustedEvidenceIssuer(led, secret=SECRET)
-    evidence = issuer.issue_package(
-        approval_id=APPROVAL,
-        user_id=USER,
-        job_key=job_key,
-        session_id=SESSION,
-        artifact_fingerprint=fp,
-    )
-
-    result = authorize_submission(
-        {
-            "canonical_url": url,
-            "job_key": job_key,
-            "organization": "Acme",
-            "role": "Engineer",
-            "ats_score": 92,
-            "quality_score": 88,
-            "pdf_path": str(pdf),
-            "pdf_fingerprint": fp,
-            "ats_score_fingerprint": fp,
-            "quality_score_fingerprint": fp,
-            "fingerprint_method": "sha256_bytes",
-            "extracted_text": "Alex Candidate\nAngular React TypeScript",
-            "evidence_package": evidence,
-        },
-        run_id="mock-e2e",
-        ledger=led,
-        dry_run=False,
-        require_form_lock=True,
-        submits_today=0,
-        identity_markers=["alex", "candidate"],
-        consent_auto_submit=True,
-    )
+        result = authorize_submission(
+            {
+                "canonical_url": url,
+                "job_key": job_key,
+                "organization": "Acme",
+                "role": "Engineer",
+                "ats_score": 92,
+                "quality_score": 88,
+                "pdf_path": str(pdf),
+                "pdf_fingerprint": fp,
+                "ats_score_fingerprint": fp,
+                "quality_score_fingerprint": fp,
+                "fingerprint_method": "sha256_bytes",
+                "extracted_text": "Alex Candidate\nAngular React TypeScript",
+                "evidence_package": evidence,
+            },
+            run_id="mock-e2e",
+            ledger=led,
+            dry_run=False,
+            require_form_lock=True,
+            submits_today=0,
+            identity_markers=["alex", "candidate"],
+            consent_auto_submit=True,
+        )
     assert result.authorized is True
     assert result.state == STATE_SUBMISSION_AUTHORIZED
 
@@ -178,3 +181,26 @@ def test_mock_portal_preview_is_non_mutating(tmp_path: Path, capsys):
     after = list(tmp_path.iterdir()) if tmp_path.exists() else []
     # init-like files may exist from workspace flag only if ensure_workspace called — preview does not.
     assert after == before or not any("runs" in str(p) for p in after)
+
+
+def test_mock_ats_browser_journey_form_confirm_timeout_duplicate():
+    from mock_ats_portal import MockAtsError, MockAtsPortal
+
+    portal = MockAtsPortal(job_url="https://jobs.ashbyhq.com/acme/mock-browser", confirm_timeout_sec=1.0)
+    portal.open_form()
+    portal.fill_field("name", "Alex Candidate")
+    portal.fill_field("email", "alex@example.test")
+    portal.fill_field("resume", "Alex_Candidate_Acme.pdf")
+    conf = portal.submit()
+    assert conf["ok"] and conf["confirmation_id"]
+    with pytest.raises(MockAtsError, match="duplicate"):
+        portal.open_form()
+
+    timed = MockAtsPortal(confirm_timeout_sec=0.0)
+    timed.open_form()
+    for field, value in (("name", "Alex"), ("email", "a@b.c"), ("resume", "r.pdf")):
+        timed.fill_field(field, value)
+    timed.submit(force_timeout=True)
+    outcome = timed.await_confirmation(timeout_sec=0.0)
+    assert outcome["outcome"] == "SubmissionUncertain"
+    assert outcome["retryable"] is False

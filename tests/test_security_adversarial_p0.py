@@ -90,42 +90,45 @@ def test_authorize_fail_closed_without_secret(monkeypatch, tmp_path: Path):
 
 
 def test_evidence_issuer_requires_durable_approval(tmp_path: Path, monkeypatch):
+    from trust_boundary import OrchestratorContext
+
     monkeypatch.setenv("JOBOPS_EVIDENCE_SECRET", SECRET.decode())
     monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
     led = Ledger(tmp_path / "iss.db")
     led.start_run("iss-1", floor=40)
-    issuer = TrustedEvidenceIssuer(led, secret=SECRET)
 
-    with pytest.raises(EvidenceIssuanceError, match="approval_not_found"):
-        issuer.issue_claim(
-            claim="user_consent",
-            approval_id="missing",
+    with OrchestratorContext(principal="pytest"):
+        issuer = TrustedEvidenceIssuer(led, secret=SECRET)
+        with pytest.raises(EvidenceIssuanceError, match="approval_not_found"):
+            issuer.issue_claim(
+                claim="user_consent",
+                approval_id="missing",
+                user_id="u1",
+                job_key="job:1",
+                session_id="s1",
+                artifact_fingerprint="f" * 64,
+            )
+
+        led.record_approval(
+            approval_id="appr-1",
+            user_id="u1",
+            job_key="job:1",
+            session_id="s1",
+            artifact_fingerprint="f" * 64,
+            document_path="/tmp/resume.pdf",
+            status="approved",
+            run_id="iss-1",
+        )
+        rec = issuer.issue_claim(
+            claim="posting_open",
+            approval_id="appr-1",
             user_id="u1",
             job_key="job:1",
             session_id="s1",
             artifact_fingerprint="f" * 64,
         )
-
-    led.record_approval(
-        approval_id="appr-1",
-        user_id="u1",
-        job_key="job:1",
-        session_id="s1",
-        artifact_fingerprint="f" * 64,
-        document_path="/tmp/resume.pdf",
-        status="approved",
-        run_id="iss-1",
-    )
-    rec = issuer.issue_claim(
-        claim="posting_open",
-        approval_id="appr-1",
-        user_id="u1",
-        job_key="job:1",
-        session_id="s1",
-        artifact_fingerprint="f" * 64,
-    )
-    assert rec["kind"] == "trusted_evidence_v1"
-    assert rec["claim"] == "posting_open"
+        assert rec["kind"] == "trusted_evidence_v1"
+        assert rec["claim"] == "posting_open"
 
     # Agent role cannot mint.
     monkeypatch.setenv("JOBOPS_AGENT_ROLE", "discovery")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any, Iterator
 
 import pytest
 
@@ -29,3 +30,25 @@ def _jobops_test_security_defaults(monkeypatch):
     monkeypatch.setenv("JOBOPS_ALLOW_SUBMIT", "0")
     monkeypatch.setenv("JOBOPS_ENABLE_LIVE_SUBMIT", "0")
     monkeypatch.setenv("JOBOPS_ENABLE_OUTREACH_SEND", "0")
+    # Untrusted agent CLIs fail closed unless a test opts into residual risk.
+    monkeypatch.setenv("JOBOPS_ALLOW_UNSANDBOXED_AGENT", "0")
+
+
+@pytest.fixture
+def orchestrator_ctx(monkeypatch) -> Iterator[Any]:
+    """Enter trusted orchestrator context for approval / evidence issuance."""
+    monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
+    from trust_boundary import OrchestratorContext
+
+    with OrchestratorContext(principal="pytest") as auth:
+        yield auth
+
+
+def record_approved_for_test(ledger: Any, **kwargs: Any) -> str:
+    """Test helper: create an approved row under OrchestratorContext."""
+    from trust_boundary import OrchestratorContext
+
+    kwargs.setdefault("status", "approved")
+    kwargs.setdefault("decided_by", "user:test")
+    with OrchestratorContext(principal="pytest"):
+        return ledger.record_approval(**kwargs)

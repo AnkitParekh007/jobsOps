@@ -164,7 +164,7 @@ def recompute_pdf_fingerprint(path: Path) -> tuple[bool, str, str, str]:
 def extract_pdf_text(path: Path) -> str:
     """
     Best-effort PDF text extract for E07.
-    Uses pypdf if available; otherwise returns empty (caller may supply extracted_text).
+    Prefers pypdf when installed; falls back to deterministic pdf_fixture parser.
     """
     try:
         from pypdf import PdfReader  # type: ignore
@@ -172,15 +172,51 @@ def extract_pdf_text(path: Path) -> str:
         try:
             from PyPDF2 import PdfReader  # type: ignore
         except ImportError:
-            return ""
+            PdfReader = None  # type: ignore
+    if PdfReader is not None:
+        try:
+            reader = PdfReader(str(path))
+            parts: list[str] = []
+            for page in reader.pages:
+                parts.append(page.extract_text() or "")
+            joined = "\n".join(parts).strip()
+            if joined:
+                return joined
+        except Exception:  # noqa: BLE001
+            pass
     try:
-        reader = PdfReader(str(path))
-        parts: list[str] = []
-        for page in reader.pages:
-            parts.append(page.extract_text() or "")
-        return "\n".join(parts)
+        from pdf_fixture import extract_text_ordered
+
+        text, _pages = extract_text_ordered(Path(path))
+        return text
     except Exception:  # noqa: BLE001
         return ""
+
+
+def reserve_daily_submission(
+    ledger: Ledger,
+    *,
+    job_key: str,
+    run_id: str,
+    cap: int = DAILY_SUBMIT_CAP,
+    submit_date: Optional[str] = None,
+    reservation_id: Optional[str] = None,
+) -> tuple[bool, str, Optional[str]]:
+    """
+    Atomically reserve one daily submit slot (cross-process safe via SQLite).
+    Requires OrchestratorContext with ``reserve_submit`` scope.
+    """
+    import uuid
+
+    day = submit_date or datetime_today_kolkata()
+    rid = reservation_id or f"res_{uuid.uuid4().hex}"
+    return ledger.reserve_submission_slot(
+        reservation_id=rid,
+        job_key=job_key,
+        run_id=run_id,
+        submit_date=day,
+        cap=cap,
+    )
 
 
 def default_checklist(**overrides: bool) -> dict[str, bool]:
@@ -1028,9 +1064,14 @@ def authorize_submission(
         materials_ok = False
         mat_blocking = list(mat_blocking) + pdf_blocking
 
-    # Daily cap — independent ledger/count check
+    # Daily cap — independent ledger/count check (includes atomic reservations).
     if submits_today is None:
         submits_today = count_submits_today(ledger)
+        if ledger is not None:
+            submits_today = max(
+                submits_today,
+                ledger.count_submission_reservations(submit_date=datetime_today_kolkata()),
+            )
     cap_verdict = check_daily_submit_cap(submits_today, cap=DAILY_SUBMIT_CAP)
     remaining = daily_submit_remaining(submits_today, cap=DAILY_SUBMIT_CAP)
     daily_cap_info = {
@@ -1351,6 +1392,57 @@ def authorize_submission(
             "Ready for approval; independent evidence incomplete for auto-submit",
         )
 
+    reservation_meta: dict[str, Any] = {}
+    if ledger is not None and not dry_run:
+        # Atomic cross-process reservation when orchestrator context is active.
+        from trust_boundary import current_orchestrator
+
+        if current_orchestrator() is not None:
+            ok_res, res_reason, res_id = reserve_daily_submission(
+                ledger, job_key=jk, run_id=run_id, cap=DAILY_SUBMIT_CAP
+            )
+            reservation_meta = {
+                "reservation_ok": ok_res,
+                "reservation_reason": res_reason,
+                "reservation_id": res_id,
+            }
+            if not ok_res:
+                blocking.append(f"submission_reservation:{res_reason}")
+                daily_cap_info = {**daily_cap_info, **reservation_meta}
+                pkg = build_application_package(
+                    job_key=jk,
+                    canonical_url=canon,
+                    run_id=run_id,
+                    state=STATE_READY_FOR_APPROVAL,
+                    ats_score=ats,
+                    quality_score=quality,
+                    pdf_fingerprint=fingerprint,
+                    fingerprint_method=method,
+                    checklist=checklist,
+                    blocking_reasons=blocking,
+                    organization=str(package_input.get("organization") or ""),
+                    role=str(package_input.get("role") or ""),
+                    pdf_path=str(pdf_path) if pdf_path else None,
+                    ats_score_fingerprint=ats_fp_s,
+                    quality_score_fingerprint=qual_fp_s,
+                    extracted_text=extracted,
+                    session_lock=lock_info,
+                    daily_cap=daily_cap_info,
+                    evidence_package=evidence,
+                    notes="daily reservation refused — concurrent cap",
+                    retryable=True,
+                    policy_version=policy_version,
+                )
+                return AuthorizeResult(
+                    False,
+                    STATE_READY_FOR_APPROVAL,
+                    SOP_STATUS_MAP[STATE_READY_FOR_APPROVAL],
+                    pkg,
+                    blocking,
+                    "daily_submit_cap",
+                    res_reason,
+                )
+
     pkg = build_application_package(
         job_key=jk,
         canonical_url=canon,
@@ -1369,8 +1461,8 @@ def authorize_submission(
         quality_score_fingerprint=qual_fp_s,
         extracted_text=extracted,
         session_lock=lock_info,
-        daily_cap=daily_cap_info,
-        evidence_package={**evidence, "authorized": True},
+        daily_cap={**daily_cap_info, **reservation_meta},
+        evidence_package={**evidence, "authorized": True, **reservation_meta},
         notes="SubmissionAuthorized — independent evidence verified; browser submit may proceed once",
         retryable=False,
         policy_version=policy_version,
