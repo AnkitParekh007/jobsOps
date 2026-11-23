@@ -31,6 +31,10 @@ from policy import (  # noqa: E402
     post_submit_timeout_hold,
     tool_allowed,
 )
+from user_workspace import (  # noqa: E402
+    identity_markers_present,
+    load_candidate_profile,
+)
 
 PRODUCER = "submission_authorize"
 ARTIFACT_TYPE_PACKAGE = "application_package"
@@ -77,14 +81,13 @@ REQUIRED_CHECKLIST = (
     "daily_cap_allows",
 )
 
-# Materials → Ready for approval can pass with a subset (human still confirms).
+# Materials → Ready for approval: only independently derived materials gates.
+# hard_eligibility / filenames / session require evidence objects for SubmissionAuthorized.
 READY_CHECKLIST = (
     "pdf_validated",
     "fingerprint_matches_scores",
     "ats_gate",
     "quality_gate",
-    "filenames_correct",
-    "hard_eligibility_met",
 )
 
 
@@ -272,6 +275,7 @@ def validate_materials(
     ats_score_fingerprint: Optional[str],
     quality_score_fingerprint: Optional[str],
     fingerprint_method: str,
+    identity_markers: Optional[Sequence[str]] = None,
 ) -> tuple[bool, list[str]]:
     """E07 materials gates: floors, fingerprint match, no invented skills."""
     blocking: list[str] = []
@@ -299,15 +303,124 @@ def validate_materials(
     if not claim.ok:
         blocking.append(f"invented_claim:{claim.blocking_reasons[0] if claim.blocking_reasons else claim.code}")
 
-    # Identity markers in extract (name) — soft fail if completely empty extract
+    # Identity markers from private profile (never hardcoded personal names).
     if not (extracted_text or "").strip():
         blocking.append("empty_pdf_extract")
     else:
-        lowered = extracted_text.lower()
-        if "ankit" not in lowered or "parekh" not in lowered:
+        markers = [str(m) for m in (identity_markers or []) if str(m).strip()]
+        if not markers:
+            blocking.append("identity_markers_missing")
+        elif not identity_markers_present(extracted_text, markers):
             blocking.append("identity_not_in_pdf_extract")
 
     return len(blocking) == 0, blocking
+
+
+# Evidence keys that must be independently verified — agent checklist booleans are not proof.
+INDEPENDENT_EVIDENCE_KEYS = (
+    "posting_open",
+    "not_duplicate",
+    "hard_eligibility_met",
+    "filenames_correct",
+    "required_fields_complete",
+    "screening_answers_verified",
+    "no_auth_wall",
+    "portal_session",
+    "user_consent",
+)
+
+
+def _evidence_truth(evidence: Mapping[str, Any], key: str) -> tuple[bool, Optional[str]]:
+    """
+    Independently verify an authorization claim from evidence_package.
+    Accepts nested objects with verified=true + method/source, or explicit proof fields.
+    Rejects bare True booleans copied from agent checklists.
+    """
+    if key not in evidence:
+        return False, f"evidence_missing:{key}"
+    val = evidence[key]
+    if val is True:
+        # Agent-supplied boolean alone is insufficient.
+        return False, f"evidence_untrusted_boolean:{key}"
+    if val is False or val is None:
+        return False, f"evidence_false:{key}"
+    if isinstance(val, Mapping):
+        if val.get("verified") is True and (
+            val.get("method") or val.get("source") or val.get("proof") or val.get("verified_at")
+        ):
+            return True, None
+        if val.get("status") == "authorized" and (val.get("session_id") or val.get("account_id")):
+            return True, None
+        if val.get("consent") is True and val.get("consent_id"):
+            return True, None
+        return False, f"evidence_incomplete:{key}"
+    if isinstance(val, str) and val.strip():
+        return True, None
+    return False, f"evidence_invalid:{key}"
+
+
+def derive_authorization_checklist(
+    *,
+    materials_ok: bool,
+    ats: float,
+    quality: float,
+    fingerprint: str,
+    ats_fp: Optional[str],
+    qual_fp: Optional[str],
+    cap_ok: bool,
+    lock_held: bool,
+    evidence: Mapping[str, Any],
+    consent_auto_submit: bool,
+    user_approved: bool,
+) -> tuple[dict[str, bool], list[str]]:
+    """
+    Build checklist from independent verification only.
+    Agent-supplied checklist booleans are ignored as proof.
+    """
+    checklist = default_checklist()
+    blocking: list[str] = []
+
+    checklist["ats_gate"] = ats >= ATS_FLOOR
+    checklist["quality_gate"] = quality >= QUALITY_FLOOR
+    checklist["fingerprint_matches_scores"] = (
+        bool(fingerprint) and ats_fp == fingerprint and qual_fp == fingerprint
+    )
+    checklist["pdf_validated"] = bool(materials_ok)
+    checklist["daily_cap_allows"] = bool(cap_ok)
+    checklist["form_lock_held"] = bool(lock_held)
+    checklist["auto_submit_or_user_approved"] = bool(consent_auto_submit and user_approved)
+
+    for key in (
+        "posting_open",
+        "not_duplicate",
+        "hard_eligibility_met",
+        "filenames_correct",
+        "required_fields_complete",
+        "screening_answers_verified",
+        "no_auth_wall",
+    ):
+        ok, reason = _evidence_truth(evidence, key)
+        checklist[key] = ok
+        if not ok and reason:
+            blocking.append(reason)
+
+    session_ok, session_reason = _evidence_truth(evidence, "portal_session")
+    checklist["session_authorized_if_needed"] = session_ok
+    if not session_ok and session_reason:
+        blocking.append(session_reason)
+
+    consent_ok, consent_reason = _evidence_truth(evidence, "user_consent")
+    if not consent_ok:
+        # Fall back to workspace consent + explicit user_approved flag in evidence.
+        if consent_auto_submit and user_approved and evidence.get("approval_id"):
+            consent_ok = True
+            checklist["auto_submit_or_user_approved"] = True
+        elif consent_reason:
+            blocking.append(consent_reason)
+    else:
+        checklist["auto_submit_or_user_approved"] = True
+
+    return checklist, blocking
 
 
 def build_application_package(
@@ -374,12 +487,16 @@ def authorize_submission(
     dry_run: bool = False,
     prior_uncertain: bool = False,
     policy_version: str = POLICY_VERSION,
+    identity_markers: Optional[Sequence[str]] = None,
+    consent_auto_submit: Optional[bool] = None,
+    workspace_home: Optional[Path] = None,
 ) -> AuthorizeResult:
     """
     Deterministic gate before any browser submit.
 
     dry_run=True stops at ReadyForApproval when materials pass (no SubmissionAuthorized).
     Never auto-retries after SubmissionUncertain (prior_uncertain → block).
+    Agent-supplied checklist booleans are never treated as proof.
     """
     url = str(package_input.get("canonical_url") or "")
     if not url.startswith("http"):
@@ -398,7 +515,7 @@ def authorize_submission(
             quality_score=float(package_input.get("quality_score") or 0),
             pdf_fingerprint=str(package_input.get("pdf_fingerprint") or "none"),
             fingerprint_method=str(package_input.get("fingerprint_method") or "fixture"),
-            checklist=package_input.get("checklist") or default_checklist(),
+            checklist=default_checklist(),
             blocking_reasons=["prior_submission_uncertain_no_auto_retry"],
             organization=str(package_input.get("organization") or ""),
             role=str(package_input.get("role") or ""),
@@ -430,13 +547,34 @@ def authorize_submission(
             quality_score=float(package_input.get("quality_score") or 0),
             pdf_fingerprint=str(package_input.get("pdf_fingerprint") or "none"),
             fingerprint_method=str(package_input.get("fingerprint_method") or "fixture"),
-            checklist=package_input.get("checklist") or default_checklist(),
+            checklist=default_checklist(),
             blocking_reasons=blocking,
             policy_version=policy_version,
         )
         return AuthorizeResult(
             False, STATE_PREPARING, SOP_STATUS_MAP[STATE_PREPARING], pkg, blocking, tool.code, tool.message
         )
+
+    # Load identity + consent from private workspace (never trust package booleans alone).
+    profile = load_candidate_profile(home=workspace_home, allow_missing=True)
+    markers = list(identity_markers or [])
+    if not markers:
+        markers = list(profile.identity_markers)
+    if not markers and package_input.get("identity_markers"):
+        markers = [str(m) for m in package_input["identity_markers"] if str(m).strip()]
+    auto_submit = (
+        bool(consent_auto_submit)
+        if consent_auto_submit is not None
+        else bool(profile.consent.get("auto_submit_enabled"))
+    )
+    # Global kill switches — external submit disabled by default.
+    import os
+
+    if os.environ.get("JOBOPS_ALLOW_SUBMIT", "0") != "1":
+        auto_submit = False
+    if os.environ.get("JOBOPS_ENABLE_LIVE_SUBMIT", "0") != "1":
+        # Live portal submit remains off unless explicitly enabled.
+        pass
 
     extracted = str(package_input.get("extracted_text") or "")
     pdf_path = package_input.get("pdf_path")
@@ -468,53 +606,63 @@ def authorize_submission(
         ats_score_fingerprint=ats_fp_s,
         quality_score_fingerprint=qual_fp_s,
         fingerprint_method=method,
+        identity_markers=markers,
     )
 
-    checklist = default_checklist(**dict(package_input.get("checklist") or {}))
-    # Derive checklist bits from materials
-    checklist["ats_gate"] = ats >= ATS_FLOOR
-    checklist["quality_gate"] = quality >= QUALITY_FLOOR
-    checklist["fingerprint_matches_scores"] = (
-        bool(fingerprint)
-        and ats_fp_s == fingerprint
-        and qual_fp_s == fingerprint
-    )
-    checklist["pdf_validated"] = materials_ok or checklist.get("pdf_validated", False)
-    if materials_ok:
-        checklist["pdf_validated"] = True
-
-    # Daily cap
+    # Daily cap — independent ledger/count check
     if submits_today is None:
         submits_today = count_submits_today(ledger)
     cap_verdict = check_daily_submit_cap(submits_today, cap=DAILY_SUBMIT_CAP)
     remaining = daily_submit_remaining(submits_today, cap=DAILY_SUBMIT_CAP)
-    checklist["daily_cap_allows"] = cap_verdict.ok
     daily_cap_info = {
         "cap": DAILY_SUBMIT_CAP,
         "submits_today": submits_today,
         "remaining": remaining,
     }
 
-    # Session / form lock
+    # Session / form lock — ledger is source of truth when require_form_lock
     lock_info = check_form_lock(ledger, canonical_url=canon, run_id=run_id)
     if require_form_lock:
-        checklist["form_lock_held"] = bool(lock_info.get("held"))
+        lock_held = bool(lock_info.get("held"))
     else:
-        checklist["form_lock_held"] = checklist.get("form_lock_held", False) or bool(
-            package_input.get("session_lock", {}).get("held")
-        )
-        if package_input.get("session_lock"):
-            lock_info = dict(package_input["session_lock"])
+        # Tests may omit ledger; still refuse agent checklist alone — need session_lock object.
+        sess = package_input.get("session_lock") or {}
+        lock_held = bool(isinstance(sess, Mapping) and sess.get("held") and sess.get("lock_id"))
+        if sess:
+            lock_info = dict(sess)
 
     evidence = dict(package_input.get("evidence_package") or {})
     evidence.setdefault("ats_floor", ATS_FLOOR)
     evidence.setdefault("quality_floor", QUALITY_FLOOR)
     evidence["materials_ok"] = materials_ok
     evidence["materials_blocking"] = mat_blocking
+    evidence["checklist_source"] = "independent_derivation"
+    evidence["ignored_agent_checklist"] = True
+
+    user_approved = bool(
+        evidence.get("approval_id")
+        or (isinstance(evidence.get("user_consent"), Mapping) and evidence["user_consent"].get("verified"))
+    )
+
+    checklist, evidence_blocking = derive_authorization_checklist(
+        materials_ok=materials_ok,
+        ats=ats,
+        quality=quality,
+        fingerprint=fingerprint or "",
+        ats_fp=ats_fp_s,
+        qual_fp=qual_fp_s,
+        cap_ok=cap_verdict.ok,
+        lock_held=lock_held,
+        evidence=evidence,
+        consent_auto_submit=auto_submit,
+        user_approved=user_approved,
+    )
 
     blocking: list[str] = []
     if not materials_ok:
         blocking.extend(mat_blocking)
+    # Evidence gaps only block full authorize / ready-for-approval completeness,
+    # not materials validation itself.
 
     # --- State machine ---
     if not materials_ok:
@@ -587,51 +735,7 @@ def authorize_submission(
             "not ready for approval",
         )
 
-    # Ready for approval — materials + floors pass
-    if dry_run or package_input.get("require_human_approval") or not checklist.get(
-        "auto_submit_or_user_approved", False
-    ):
-        # Dry-run / human confirmation path
-        extra_block: list[str] = []
-        if dry_run:
-            extra_block.append("dry_run_ready_for_approval")
-        if not checklist.get("auto_submit_or_user_approved", False):
-            extra_block.append("human_approval_required")
-        pkg = build_application_package(
-            job_key=jk,
-            canonical_url=canon,
-            run_id=run_id,
-            state=STATE_READY_FOR_APPROVAL,
-            ats_score=ats,
-            quality_score=quality,
-            pdf_fingerprint=fingerprint,
-            fingerprint_method=method,
-            checklist=checklist,
-            blocking_reasons=extra_block,
-            organization=str(package_input.get("organization") or ""),
-            role=str(package_input.get("role") or ""),
-            pdf_path=str(pdf_path) if pdf_path else None,
-            ats_score_fingerprint=ats_fp_s,
-            quality_score_fingerprint=qual_fp_s,
-            extracted_text=extracted,
-            session_lock=lock_info,
-            daily_cap=daily_cap_info,
-            evidence_package={**evidence, "ready_for_approval": True},
-            notes="Ready for approval — full evidence package; no live submit",
-            retryable=False,
-            policy_version=policy_version,
-        )
-        return AuthorizeResult(
-            False,
-            STATE_READY_FOR_APPROVAL,
-            SOP_STATUS_MAP[STATE_READY_FOR_APPROVAL],
-            pkg,
-            extra_block,
-            "ready_for_approval",
-            "materials validated; awaiting approval / dry-run",
-        )
-
-    # Full authorize path
+    # Cap exhausted → stay Ready for approval with explicit block (even before consent path).
     if not cap_verdict.ok:
         blocking.append("daily_submit_cap")
         pkg = build_application_package(
@@ -668,7 +772,55 @@ def authorize_submission(
             cap_verdict.message,
         )
 
-    if require_form_lock and not checklist.get("form_lock_held"):
+    # Ready for approval — materials + floors pass (default / dry-run path)
+    if dry_run or package_input.get("require_human_approval") or not checklist.get(
+        "auto_submit_or_user_approved", False
+    ):
+        extra_block: list[str] = []
+        if dry_run:
+            extra_block.append("dry_run_ready_for_approval")
+        if not checklist.get("auto_submit_or_user_approved", False):
+            extra_block.append("human_approval_required")
+        if not auto_submit:
+            extra_block.append("submit_disabled_by_default")
+        pkg = build_application_package(
+            job_key=jk,
+            canonical_url=canon,
+            run_id=run_id,
+            state=STATE_READY_FOR_APPROVAL,
+            ats_score=ats,
+            quality_score=quality,
+            pdf_fingerprint=fingerprint,
+            fingerprint_method=method,
+            checklist=checklist,
+            blocking_reasons=extra_block,
+            organization=str(package_input.get("organization") or ""),
+            role=str(package_input.get("role") or ""),
+            pdf_path=str(pdf_path) if pdf_path else None,
+            ats_score_fingerprint=ats_fp_s,
+            quality_score_fingerprint=qual_fp_s,
+            extracted_text=extracted,
+            session_lock=lock_info,
+            daily_cap=daily_cap_info,
+            evidence_package={**evidence, "ready_for_approval": True},
+            notes="Ready for approval — materials validated; no live submit",
+            retryable=False,
+            policy_version=policy_version,
+        )
+        return AuthorizeResult(
+            False,
+            STATE_READY_FOR_APPROVAL,
+            SOP_STATUS_MAP[STATE_READY_FOR_APPROVAL],
+            pkg,
+            extra_block,
+            "ready_for_approval",
+            "materials validated; awaiting approval / dry-run",
+        )
+
+    # Full authorize path — independent evidence required (ignore agent checklist).
+    blocking.extend(evidence_blocking)
+
+    if not checklist.get("form_lock_held"):
         blocking.append("form_lock_not_held")
         pkg = build_application_package(
             job_key=jk,
@@ -705,8 +857,8 @@ def authorize_submission(
         )
 
     submit_fail = [k for k in REQUIRED_CHECKLIST if not checklist.get(k)]
-    if submit_fail:
-        blocking.extend([f"checklist:{k}" for k in submit_fail])
+    if submit_fail or evidence_blocking:
+        blocking.extend([f"checklist:{k}" for k in submit_fail if f"checklist:{k}" not in blocking])
         pkg = build_application_package(
             job_key=jk,
             canonical_url=canon,
@@ -727,7 +879,7 @@ def authorize_submission(
             session_lock=lock_info,
             daily_cap=daily_cap_info,
             evidence_package=evidence,
-            notes="submit checklist incomplete",
+            notes="submit evidence incomplete — agent checklist booleans ignored",
             retryable=True,
             policy_version=policy_version,
         )
@@ -738,7 +890,7 @@ def authorize_submission(
             pkg,
             blocking,
             "submit_checklist_incomplete",
-            "Ready for approval; checklist incomplete for auto-submit",
+            "Ready for approval; independent evidence incomplete for auto-submit",
         )
 
     pkg = build_application_package(
@@ -761,7 +913,7 @@ def authorize_submission(
         session_lock=lock_info,
         daily_cap=daily_cap_info,
         evidence_package={**evidence, "authorized": True},
-        notes="SubmissionAuthorized — browser submit may proceed once",
+        notes="SubmissionAuthorized — independent evidence verified; browser submit may proceed once",
         retryable=False,
         policy_version=policy_version,
     )
@@ -772,7 +924,7 @@ def authorize_submission(
         pkg,
         [],
         "submission_authorized",
-        "all gates passed",
+        "all independent gates passed",
     )
 
 

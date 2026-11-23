@@ -33,6 +33,7 @@ def test_daily_cap_blocks_authorize(tmp_path: Path):
         dry_run=False,
         require_form_lock=False,
         submits_today=int(data["submits_today"]),
+        identity_markers=["alex", "candidate"],
     )
     assert result.authorized is False
     assert result.state == STATE_READY_FOR_APPROVAL
@@ -42,8 +43,10 @@ def test_daily_cap_blocks_authorize(tmp_path: Path):
     assert would_allow_submit(shortlist_count=0, submits_today=0) is False
 
 
-def test_form_lock_required(tmp_path: Path):
+def test_form_lock_required(tmp_path: Path, monkeypatch):
     data = _load("lock_missing.json")
+    data["evidence_package"] = _independent_evidence()
+    monkeypatch.setenv("JOBOPS_ALLOW_SUBMIT", "1")
     result = authorize_submission(
         data,
         run_id="e08-nolock",
@@ -51,21 +54,41 @@ def test_form_lock_required(tmp_path: Path):
         require_form_lock=True,
         submits_today=0,
         ledger=None,
+        identity_markers=["alex", "candidate"],
+        consent_auto_submit=True,
     )
     assert result.authorized is False
     assert result.state == STATE_MATERIALS_VALIDATED
     assert any("form_lock" in b for b in result.blocking_reasons)
 
 
-def test_form_lock_held_can_authorize(tmp_path: Path):
+def _independent_evidence(**overrides):
+    """Evidence objects — bare booleans are intentionally insufficient."""
+    base = {
+        "posting_open": {"verified": True, "method": "http_head", "verified_at": "2026-01-01T00:00:00Z"},
+        "not_duplicate": {"verified": True, "method": "ledger_job_key", "source": "ledger"},
+        "hard_eligibility_met": {"verified": True, "method": "policy_eligibility_safety", "proof": "e05"},
+        "filenames_correct": {"verified": True, "method": "filename_contract"},
+        "required_fields_complete": {"verified": True, "method": "form_scan"},
+        "screening_answers_verified": {"verified": True, "method": "verified_facts_only"},
+        "no_auth_wall": {"verified": True, "method": "session_probe"},
+        "portal_session": {"status": "authorized", "session_id": "sess-test-1", "account_id": "acct-1"},
+        "user_consent": {"verified": True, "consent_id": "consent-1", "method": "workspace_consent"},
+        "approval_id": "approval-test-1",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_form_lock_held_can_authorize(tmp_path: Path, monkeypatch):
     data = _load("lock_missing.json")
     db = tmp_path / "jobops.db"
     led = Ledger(db)
     led.start_run("e08-lock", floor=40, phase="authorize")
     acquire_form_lock(led, canonical_url=data["canonical_url"], run_id="e08-lock")
-    # Full checklist for authorize
-    data["checklist"]["form_lock_held"] = True
-    data["checklist"]["auto_submit_or_user_approved"] = True
+    # Agent checklist booleans must NOT be sufficient — supply independent evidence.
+    data["evidence_package"] = _independent_evidence()
+    monkeypatch.setenv("JOBOPS_ALLOW_SUBMIT", "1")
     result = authorize_submission(
         data,
         run_id="e08-lock",
@@ -73,9 +96,47 @@ def test_form_lock_held_can_authorize(tmp_path: Path):
         require_form_lock=True,
         submits_today=0,
         ledger=led,
+        identity_markers=["alex", "candidate"],
+        consent_auto_submit=True,
     )
     assert result.authorized is True
     assert result.state == STATE_SUBMISSION_AUTHORIZED
+    led.close()
+
+
+def test_agent_checklist_booleans_are_not_proof(tmp_path: Path, monkeypatch):
+    data = _load("lock_missing.json")
+    db = tmp_path / "jobops.db"
+    led = Ledger(db)
+    led.start_run("e08-bool", floor=40, phase="authorize")
+    acquire_form_lock(led, canonical_url=data["canonical_url"], run_id="e08-bool")
+    # All checklist booleans true + approval_id, but evidence values are bare booleans.
+    data["checklist"] = {k: True for k in data["checklist"]}
+    data["evidence_package"] = {
+        "posting_open": True,  # untrusted bare boolean
+        "not_duplicate": True,
+        "hard_eligibility_met": True,
+        "filenames_correct": True,
+        "required_fields_complete": True,
+        "screening_answers_verified": True,
+        "no_auth_wall": True,
+        "portal_session": True,
+        "user_consent": True,
+        "approval_id": "approval-spoofed",
+    }
+    monkeypatch.setenv("JOBOPS_ALLOW_SUBMIT", "1")
+    result = authorize_submission(
+        data,
+        run_id="e08-bool",
+        dry_run=False,
+        require_form_lock=True,
+        submits_today=0,
+        ledger=led,
+        identity_markers=["alex", "candidate"],
+        consent_auto_submit=True,
+    )
+    assert result.authorized is False
+    assert any("evidence_" in b for b in result.blocking_reasons)
     led.close()
 
 
@@ -87,6 +148,7 @@ def test_uncertain_never_auto_retry():
         prior_uncertain=True,
         dry_run=False,
         submits_today=0,
+        identity_markers=["alex", "candidate"],
     )
     assert result.state == STATE_UNCERTAIN
     assert result.authorized is False

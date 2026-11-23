@@ -55,22 +55,30 @@ VERIFY_PROMPT="$ROOT/agents/verification.md"
 OUTREACH_PROMPT="$ROOT/agents/outreach-draft.md"
 WORKSPACE_KEY="cursor-job-automations"
 LEDGER_DB="${JOBOPS_DB:-$ROOT/state/jobops.db}"
-# Optional fixture / export path for pipeline inbox (Gmail-like JSON).
-# Pipeline mode defaults to E09 fixture when unset; full-run skim is off unless PIPELINE_INBOX is set.
-if [[ "$JOBOPS_MODE" == "pipeline" ]]; then
-  PIPELINE_INBOX="${PIPELINE_INBOX:-$ROOT/evals/fixtures/e09/gmail_inbox.json}"
-else
-  PIPELINE_INBOX="${PIPELINE_INBOX:-}"
-fi
+# Inbox path for pipeline — NEVER default to test fixtures in live execution.
+# Set PIPELINE_INBOX explicitly (private workspace path or user export).
+PIPELINE_INBOX="${PIPELINE_INBOX:-}"
 
 log() { print -r -- "[harness] $*"; }
 die() { print -r -- "[harness] ERROR: $*" >&2; exit 1; }
 
 require() { command -v "$1" >/dev/null 2>&1 || die "$1 not found"; }
 require python3
-# agent CLI only required for full discovery/frontier path
+# Provider-neutral runtime detect (Cursor / Claude / Codex / Antigravity / deterministic).
+# Never require a single vendor CLI; never use unrestricted --force/--trust.
+AGENT_RUNTIME_LIB="$ROOT/lib/agent_runtime.py"
+[[ -f "$AGENT_RUNTIME_LIB" ]] || die "missing lib/agent_runtime.py"
+JOBOPS_RUNTIME="${JOBOPS_RUNTIME:-auto}"
+# External side effects OFF by default.
+JOBOPS_ALLOW_SUBMIT="${JOBOPS_ALLOW_SUBMIT:-0}"
+JOBOPS_ENABLE_LIVE_SUBMIT="${JOBOPS_ENABLE_LIVE_SUBMIT:-0}"
+JOBOPS_ENABLE_OUTREACH_SEND="${JOBOPS_ENABLE_OUTREACH_SEND:-0}"
+export JOBOPS_ALLOW_SUBMIT JOBOPS_ENABLE_LIVE_SUBMIT JOBOPS_ENABLE_OUTREACH_SEND JOBOPS_RUNTIME
 if [[ "$JOBOPS_MODE" != "pipeline" ]]; then
-  require agent
+  python3 "$AGENT_RUNTIME_LIB" --detect --runtime "$JOBOPS_RUNTIME" >"$ROOT/state/runtime-detect.json" 2>/dev/null || \
+    python3 "$AGENT_RUNTIME_LIB" --detect >"$ROOT/state/runtime-detect.json" || true
+  SELECTED="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["selected"]["provider"])' "$ROOT/state/runtime-detect.json" 2>/dev/null || print deterministic)"
+  log "agent_runtime selected=$SELECTED (JOBOPS_RUNTIME=$JOBOPS_RUNTIME); submit_allow=$JOBOPS_ALLOW_SUBMIT"
 fi
 
 [[ -f "$ROOT/scheduled-task-prompt.md" ]] || die "missing scheduled-task-prompt.md"
@@ -117,20 +125,28 @@ fi
 
 # --- 0) F01 Context lite (run row + lock; session inventory) ---
 log "context preflight…"
-python3 "$RUN_CONTEXT" \
-  --run-id "$RUN_ID" \
-  --run-dir "$RUN_DIR" \
-  --floor "$FLOOR" \
-  --db "$LEDGER_DB" | tee "$RUN_DIR/run-context.summary.json"
+CONTEXT_ARGS=(--run-id "$RUN_ID" --run-dir "$RUN_DIR" --floor "$FLOOR" --db "$LEDGER_DB")
+if [[ -n "${JOBOPS_HOME:-}" ]]; then
+  CONTEXT_ARGS+=(--workspace "$JOBOPS_HOME")
+fi
+python3 "$RUN_CONTEXT" "${CONTEXT_ARGS[@]}" | tee "$RUN_DIR/run-context.summary.json"
 
 # ---------------------------------------------------------------------------
 # Phase 4 pipeline-only path: skip discovery; inbox → ledger → report → sync
 # ---------------------------------------------------------------------------
 if [[ "$JOBOPS_MODE" == "pipeline" ]]; then
   log "JOBOPS_MODE=pipeline — skipping discovery/verify/rank/frontier"
-  if [[ ! -f "$PIPELINE_INBOX" ]]; then
-    die "pipeline inbox missing: $PIPELINE_INBOX (set PIPELINE_INBOX=...)"
+  if [[ -z "$PIPELINE_INBOX" ]]; then
+    die "pipeline mode requires PIPELINE_INBOX=... (test fixtures are not live defaults)"
   fi
+  if [[ ! -f "$PIPELINE_INBOX" ]]; then
+    die "pipeline inbox missing: $PIPELINE_INBOX"
+  fi
+  case "$PIPELINE_INBOX" in
+    */evals/fixtures/*)
+      die "refusing test-fixture inbox for live pipeline: $PIPELINE_INBOX (use a private workspace export)"
+      ;;
+  esac
   log "P01 inbox outcomes from $PIPELINE_INBOX…"
   python3 "$INBOX" \
     --inbox "$PIPELINE_INBOX" \
@@ -234,49 +250,52 @@ ctx_path.write_text(json.dumps(ctx, indent=2) + "\n", encoding="utf-8")
 fi
 
 # --- helpers ---
+# Map harness labels → AgentRuntime roles (least-privilege scopes).
+role_for_label() {
+  case "$1" in
+    worker:*) print discovery ;;
+    verification) print verification ;;
+    frontier-rank-report|frontier-finish) print frontier_rank ;;
+    frontier-submit) print frontier_submit ;;
+    outreach*) print outreach ;;
+    *) print discovery ;;
+  esac
+}
+
 run_agent() {
   local label="$1"
   local prompt_file="$2"
   local log_out="$3"
   local timeout_sec="${4:-0}"
-  log "agent:$label starting…"
+  local role
+  role="$(role_for_label "$label")"
+  log "agent:$label role=$role runtime=$JOBOPS_RUNTIME starting…"
   set +e
-  # Quiet stdout to log only so parallel workers don't interleave noise.
-  agent --print --force --trust --workspace "$ROOT" "$(cat "$prompt_file")" >"$log_out" 2>&1 &
-  local apid=$!
-  local watchdog=0
-  if (( timeout_sec > 0 )); then
-    (
-      sleep "$timeout_sec"
-      if kill -0 "$apid" 2>/dev/null; then
-        print -r -- "[harness] TIMEOUT ${timeout_sec}s killing agent:$label pid=$apid" >>"$log_out"
-        kill "$apid" 2>/dev/null || true
-        sleep 2
-        kill -9 "$apid" 2>/dev/null || true
-      fi
-    ) &
-    watchdog=$!
-  fi
-  wait "$apid"
+  # Provider-neutral invoke — refuses --force/--trust; enforces role tool scopes.
+  python3 "$AGENT_RUNTIME_LIB" \
+    --runtime "$JOBOPS_RUNTIME" \
+    --invoke-role "$role" \
+    --prompt "$prompt_file" \
+    --workspace "$ROOT" \
+    --log "$log_out" \
+    --timeout "$timeout_sec"
   local rc=$?
-  if (( watchdog > 0 )); then
-    kill "$watchdog" 2>/dev/null || true
-    wait "$watchdog" 2>/dev/null || true
-  fi
   set -e
-  # Surface SHARD_OK / key lines
-  grep -E 'SHARD_OK|ERROR|TIMEOUT|floor_met|no quota was promised' "$log_out" 2>/dev/null | tail -5 || true
+  grep -E 'SHARD_OK|ERROR|TIMEOUT|floor_met|no quota was promised|forbidden|blocked' "$log_out" 2>/dev/null | tail -5 || true
   log "agent:$label exited rc=$rc"
   return "$rc"
 }
 
 write_stub_shard() {
+  # Failed / timed-out / missing shard ≠ honest source exhaustion.
   local shard_id="$1"
   local wrc="$2"
+  local reason="${3:-worker_failed}"
   python3 -c '
 import json,sys
 from pathlib import Path
-shard_id, run_id, path, wrc = sys.argv[1:5]
+shard_id, run_id, path, wrc, reason = sys.argv[1:6]
+timed_out = reason == "timeout" or str(wrc) == "124"
 Path(path).write_text(json.dumps({
   "shard_id": shard_id,
   "run_id": run_id,
@@ -284,14 +303,15 @@ Path(path).write_text(json.dumps({
   "lane_name": "unknown",
   "country": "unknown",
   "mode": "http",
-  "exhausted": True,
-  "sources_tried": ["worker-failed-or-empty"],
-  "sources_blocked": [{"source": "worker", "reason": "no shard file"}],
-  "sources_remaining_readable": [],
+  "exhausted": False,
+  "worker_status": "timeout" if timed_out else "failed",
+  "sources_tried": [],
+  "sources_blocked": [{"source": "worker", "reason": reason, "worker_rc": int(wrc) if str(wrc).lstrip("-").isdigit() else wrc}],
+  "sources_remaining_readable": ["unknown_after_worker_failure"],
   "matches": [],
-  "notes": f"harness stub after worker rc={wrc}"
+  "notes": f"harness stub: worker {reason} rc={wrc}; NOT source exhaustion"
 }, indent=2) + "\n", encoding="utf-8")
-' "$shard_id" "$RUN_ID" "$SHARDS_DIR/$shard_id.json" "$wrc"
+' "$shard_id" "$RUN_ID" "$SHARDS_DIR/$shard_id.json" "$wrc" "$reason"
 }
 
 # --- 2) Build prompts + dispatch workers ---
@@ -333,11 +353,25 @@ if [[ "$PARALLEL" == "1" ]]; then
     wrc=1
     [[ -f "$RUN_DIR/worker-$shard_id.rc" ]] && wrc="$(cat "$RUN_DIR/worker-$shard_id.rc")"
     if [[ ! -f "$SHARDS_DIR/$shard_id.json" ]]; then
-      log "worker $shard_id missing shard — stubbing"
-      write_stub_shard "$shard_id" "$wrc"
+      reason="worker_failed"
+      [[ "$wrc" == "124" ]] && reason="timeout"
+      log "worker $shard_id missing shard — stubbing as $reason (NOT exhausted)"
+      write_stub_shard "$shard_id" "$wrc" "$reason"
     else
-      python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(sys.argv[2], "matches",len(d.get("matches")or[]),"exhausted",d.get("exhausted"))' \
-        "$SHARDS_DIR/$shard_id.json" "$shard_id"
+      # Never rewrite a worker's exhausted flag on timeout after partial write — verify status.
+      python3 -c '
+import json,sys
+from pathlib import Path
+path, shard_id, wrc = sys.argv[1:4]
+d=json.load(open(path))
+if str(wrc)=="124":
+    d["exhausted"]=False
+    d["worker_status"]="timeout"
+    d.setdefault("sources_remaining_readable", ["unknown_after_timeout"])
+    d["notes"]=(d.get("notes") or "") + " | harness: timeout is not source exhaustion"
+    Path(path).write_text(json.dumps(d, indent=2)+"\n", encoding="utf-8")
+print(shard_id, "matches", len(d.get("matches") or []), "exhausted", d.get("exhausted"), "worker_status", d.get("worker_status"))
+' "$SHARDS_DIR/$shard_id.json" "$shard_id" "$wrc"
     fi
   done
 else
@@ -347,10 +381,14 @@ else
     shard_id="${shard_id#prompt-worker-}"
     shard_id="${shard_id%.md}"
     set +e
-    run_agent "worker:$shard_id" "$prompt" "$RUN_DIR/agent-worker-$shard_id.log"
+    run_agent "worker:$shard_id" "$prompt" "$RUN_DIR/agent-worker-$shard_id.log" "$WORKER_TIMEOUT_SEC"
     wrc=$?
     set -e
-    [[ -f "$SHARDS_DIR/$shard_id.json" ]] || write_stub_shard "$shard_id" "$wrc"
+    if [[ ! -f "$SHARDS_DIR/$shard_id.json" ]]; then
+      reason="worker_failed"
+      [[ "$wrc" == "124" ]] && reason="timeout"
+      write_stub_shard "$shard_id" "$wrc" "$reason"
+    fi
   done
 fi
 
@@ -579,10 +617,10 @@ python3 "$AUTHORIZE" \
   --db "$LEDGER_DB" >"$RUN_DIR/authorize-check.json"
 arc=$?
 set -e
-if [[ "$SUBMIT_AGENT" == "1" && $arc -eq 0 ]]; then
+if [[ "$SUBMIT_AGENT" == "1" && "$JOBOPS_ALLOW_SUBMIT" == "1" && "$JOBOPS_ENABLE_LIVE_SUBMIT" == "1" && $arc -eq 0 ]]; then
   ALLOW_SUBMIT=1
 fi
-log "submit gate: SUBMIT_AGENT=$SUBMIT_AGENT authorize_rc=$arc allow=$ALLOW_SUBMIT shortlist=$SHORTLIST_COUNT"
+log "submit gate: SUBMIT_AGENT=$SUBMIT_AGENT allow_submit=$JOBOPS_ALLOW_SUBMIT live=$JOBOPS_ENABLE_LIVE_SUBMIT authorize_rc=$arc allow=$ALLOW_SUBMIT shortlist=$SHORTLIST_COUNT"
 if (( ALLOW_SUBMIT == 1 )); then
   FRONTIER_SUBMIT_PROMPT_FILE="$RUN_DIR/prompt-frontier-submit.md"
   {
