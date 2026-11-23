@@ -3,8 +3,14 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from url_safety import validate_fetch_url, safe_http_fetch
+from url_safety import validate_fetch_url, validate_ip_literal, safe_http_fetch
 from verify_jobs import http_fetch, verify_match
+
+
+def test_connection_time_ip_rebinding_guard():
+    assert validate_ip_literal("127.0.0.1").ok is False
+    assert validate_ip_literal("169.254.169.254").ok is False
+    assert validate_ip_literal("::1").ok is False
 
 
 def test_blocks_localhost_and_loopback():
