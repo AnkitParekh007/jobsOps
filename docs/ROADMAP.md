@@ -14,6 +14,9 @@ Work in independent increments. Never exchange completeness for a single enormou
 | P7 | Learning and evals | Approved policy proposals, cohort integrity, rollback and E01–E12 suites |
 | P8 | Release readiness | Full clean-room install, accessibility/security review, CI, documentation, no critical defects |
 
+## Additional requirements from the career-ops reference gap study
+See [reference comparison](REFERENCE-GAP-ANALYSIS.md) and [extensibility specification](EXTENSIBILITY-AND-DISTRIBUTION.md). Add phase acceptance tasks for data-root separation and updates (P0), vendor source registry / token-free triage / liveness and integrity / budgets / backups (P1), plugin permission and trust governance and real client packaging smoke tests (P2/P6), and optional localhost dashboard and interactive safe-fill user experience (P3/P4/P8). Ensure these features have independent test evidence before marking them complete.
+
 ## Phase exit checklist
 - Traceability: tasks ↔ source ↔ code ↔ tests ↔ evidence.
 - Functionality: negative and positive acceptance cases executed.

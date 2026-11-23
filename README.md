@@ -8,6 +8,9 @@ jobsOps coordinates job discovery, live-posting verification, candidate-fit rank
 
 ## Start here
 
+- [Career-ops reference study and missing features](docs/REFERENCE-GAP-ANALYSIS.md)
+- [Extensibility, installation and distribution contracts](docs/EXTENSIBILITY-AND-DISTRIBUTION.md)
+- [Contributing](CONTRIBUTING.md) and [security](SECURITY.md)
 - [Product and complete task inventory](docs/PRODUCT-SCOPE.md)
 - [Architecture, agents, subagents and handoffs](docs/ARCHITECTURE.md)
 - [Installation and user journey across AI platforms](docs/USER-GUIDE.md)
