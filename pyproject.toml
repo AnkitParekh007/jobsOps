@@ -46,6 +46,7 @@ py-modules = [
   "pdf_fixture",
   "policy",
   "rank_opportunities",
+  "review_queue",
   "run_context",
   "run_report",
   "sheets_sync",
