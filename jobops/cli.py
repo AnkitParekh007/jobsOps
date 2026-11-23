@@ -263,23 +263,132 @@ def cmd_run(args: argparse.Namespace) -> int:
     return subprocess.call(cmd, cwd=str(ROOT), env=env)
 
 
-def cmd_approve(args: argparse.Namespace) -> int:
-    """Interactive approval: TTY challenge confirm → atomic approve (no model self-approve)."""
-    from approval_controller import ApprovalController, TtyConfirmationChannel
-    from authority import install_control_plane_privilege, reset_control_plane_for_tests
-    from ledger import Ledger
-    from trust_boundary import open_orchestrator
-    from user_workspace import default_jobops_home
+def cmd_control_plane_provision(args: argparse.Namespace) -> int:
+    """
+    Install OS-gated control-plane credentials (separate from ``jobops approve``).
 
+    Requires ``JOBOPS_CONTROL_PLANE=1`` already set. Never clears ``JOBOPS_AGENT_ROLE``
+    — if an agent role is present, provisioning fails closed.
+    """
+    from authority import (
+        AuthorityError,
+        bootstrap_control_plane,
+        install_control_plane_privilege,
+    )
+    from trust_boundary import agent_role_from_env, is_untrusted_agent_role
+    from user_workspace import default_jobops_home, ensure_workspace
+
+    role = agent_role_from_env()
+    if is_untrusted_agent_role(role):
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": f"control_plane_provision_forbidden_in_agent_role:{role}",
+                },
+                indent=2,
+            )
+        )
+        return 2
+    if os.environ.get("JOBOPS_CONTROL_PLANE", "0") != "1":
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": "control_plane_not_enabled:"
+                    "set JOBOPS_CONTROL_PLANE=1 before provisioning",
+                },
+                indent=2,
+            )
+        )
+        return 2
     home = Path(args.workspace).expanduser() if args.workspace else default_jobops_home()
-    os.environ.setdefault("JOBOPS_CONTROL_PLANE", "1")
-    os.environ.pop("JOBOPS_AGENT_ROLE", None)
-    reset_control_plane_for_tests()
+    ensure_workspace(home)
     try:
-        install_control_plane_privilege(home)
-    except Exception as exc:  # noqa: BLE001
+        priv = install_control_plane_privilege(home)
+        seal = bootstrap_control_plane(home)
+    except AuthorityError as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
         return 2
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "home": str(home),
+                "privilege": str(priv),
+                "seal_id": seal.seal_id,
+                "note": (
+                    "Same-OS-user processes that can open mode-0600 secrets remain "
+                    "a residual risk; privilege files are not a TEE/HSM boundary."
+                ),
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
+def cmd_approve(args: argparse.Namespace) -> int:
+    """
+    Interactive approval: TTY challenge confirm → atomic approve.
+
+    Requires pre-existing control-plane privilege (``jobops control-plane provision``).
+    Does not install credentials, does not reset contamination state, and does not
+    clear ``JOBOPS_AGENT_ROLE``. Production confirmation is always TTY — synthetic
+    echo channels cannot be injected here.
+    """
+    from approval_controller import ApprovalController, TtyConfirmationChannel
+    from authority import AuthorityError, require_privileged_access
+    from ledger import Ledger
+    from trust_boundary import (
+        agent_role_from_env,
+        is_untrusted_agent_role,
+        open_orchestrator,
+    )
+    from user_workspace import default_jobops_home
+
+    role = agent_role_from_env()
+    if is_untrusted_agent_role(role):
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": f"approve_forbidden_in_agent_role:{role}",
+                },
+                indent=2,
+            )
+        )
+        return 2
+    if os.environ.get("JOBOPS_CONTROL_PLANE", "0") != "1":
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": "control_plane_not_enabled:"
+                    "set JOBOPS_CONTROL_PLANE=1 and run "
+                    "`jobops control-plane provision` first",
+                },
+                indent=2,
+            )
+        )
+        return 2
+
+    home = Path(args.workspace).expanduser() if args.workspace else default_jobops_home()
+    try:
+        require_privileged_access(home)
+    except AuthorityError as exc:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": f"control_plane_privilege_required:{exc}",
+                    "hint": "run `jobops control-plane provision` first",
+                },
+                indent=2,
+            )
+        )
+        return 2
+
     db = home / "state" / "jobops.db"
     led = Ledger(db)
     try:
@@ -326,9 +435,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument("--force", action="store_true")
     p_init.set_defaults(func=cmd_init)
 
+    p_cp = sub.add_parser(
+        "control-plane",
+        help="Control-plane credential provisioning (separate from approve)",
+    )
+    cp_sub = p_cp.add_subparsers(dest="control_plane_command", required=True)
+    p_prov = cp_sub.add_parser(
+        "provision",
+        help="Install OS-gated privilege + authority/confirmation keys",
+    )
+    p_prov.add_argument("--workspace", default="")
+    p_prov.set_defaults(func=cmd_control_plane_provision)
+
     p_appr = sub.add_parser(
         "approve",
-        help="Interactively confirm and approve a pending approval (TTY required)",
+        help=(
+            "Interactively confirm and approve a pending approval "
+            "(TTY required; privilege must already be provisioned)"
+        ),
     )
     p_appr.add_argument("--approval-id", required=True)
     p_appr.add_argument("--principal", required=True)

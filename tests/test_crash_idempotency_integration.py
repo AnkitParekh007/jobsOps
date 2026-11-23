@@ -116,11 +116,11 @@ def test_form_lock_blocks_second_run_authorize(tmp_path: Path, monkeypatch):
     led1.start_run("race-1", floor=40, phase="authorize")
     acquire_form_lock(led1, canonical_url=url, run_id="race-1")
     ev = pkg["evidence_package"]
-    from trust_boundary import open_orchestrator
+    from conftest import open_test_orchestrator
 
     home = tmp_path / "jobops-home"
     home.mkdir(exist_ok=True)
-    with open_orchestrator(home, principal="pytest"):
+    with open_test_orchestrator(home, principal="pytest"):
         led1.record_approval(
             approval_id=str(ev["approval_id"]),
             user_id=str(ev["user_id"]),
@@ -130,7 +130,7 @@ def test_form_lock_blocks_second_run_authorize(tmp_path: Path, monkeypatch):
             status="approved",
             run_id="race-1",
         )
-    with open_orchestrator(home, principal="pytest"):
+    with open_test_orchestrator(home, principal="pytest"):
         ok1 = authorize_submission(
             pkg,
             run_id="race-1",
@@ -147,7 +147,7 @@ def test_form_lock_blocks_second_run_authorize(tmp_path: Path, monkeypatch):
     led2.start_run("race-2", floor=40, phase="authorize")
     with pytest.raises(RuntimeError, match="lock held"):
         acquire_form_lock(led2, canonical_url=url, run_id="race-2")
-    with open_orchestrator(home, principal="pytest"):
+    with open_test_orchestrator(home, principal="pytest"):
         blocked = authorize_submission(
             pkg,
             run_id="race-2",

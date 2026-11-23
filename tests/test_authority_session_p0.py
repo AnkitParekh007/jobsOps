@@ -15,11 +15,13 @@ from approval_controller import (
     ApprovalAuthError,
     ApprovalController,
     ConfirmationReceipt,
-    EchoChallengeChannel,
-    FabricatedConfirmationChannel,
     InteractiveApprovalGate,
     issue_confirmed_session,
     mint_user_session,
+)
+from confirmation_test_channels import (
+    EchoChallengeChannel,
+    FabricatedConfirmationChannel,
 )
 from authority import (
     AuthorityError,

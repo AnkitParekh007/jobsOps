@@ -21,7 +21,7 @@ from submission_authorize import (
     fingerprint_bytes,
     record_submission_outcome,
 )
-from trust_boundary import open_orchestrator
+from conftest import open_test_orchestrator
 
 SECRET = b"jobops-mock-portal-e2e-secret"
 USER = "user-mock"
@@ -52,7 +52,7 @@ def test_mock_portal_happy_path_authorize_and_receipt(tmp_path: Path, monkeypatc
     led = Ledger(tmp_path / "mock.db")
     led.start_run("mock-e2e", floor=40, phase="authorize")
     acquire_form_lock(led, canonical_url=url, run_id="mock-e2e")
-    with open_orchestrator(home, principal="pytest"):
+    with open_test_orchestrator(home, principal="pytest"):
         led.record_approval(
             approval_id=APPROVAL,
             user_id=USER,

@@ -15,6 +15,7 @@ import json
 import os
 import secrets
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -222,12 +223,16 @@ def _load_or_create_secret_file(path: Path, *, too_short_code: str) -> bytes:
             # Lost create race — fall through to load path.
             pass
     # Repair insecure mode from concurrent writers / umask races, then assert.
-    _chmod_private_file(path)
-    _assert_private_file(path)
-    key = path.read_bytes()
-    if len(key) < 16:
-        raise AuthorityError(too_short_code)
-    return key
+    # Brief retry covers readers that observe a partially-written create.
+    last: bytes = b""
+    for attempt in range(8):
+        _chmod_private_file(path)
+        _assert_private_file(path)
+        last = path.read_bytes()
+        if len(last) >= 16:
+            return last
+        time.sleep(0.005 * (attempt + 1))
+    raise AuthorityError(too_short_code)
 
 
 def load_or_create_authority_key(workspace_home: Path) -> bytes:
@@ -346,7 +351,19 @@ def bootstrap_control_plane(workspace_home: Path | str) -> ControlPlaneSeal:
 
 
 def reset_control_plane_for_tests() -> None:
-    """Test-only: clear contamination/seal so fixtures can re-bootstrap."""
+    """
+    Test-only: clear contamination/seal so fixtures can re-bootstrap.
+
+    Forbidden in production CLI paths. Requires an authenticated test
+    configuration (``PYTEST_CURRENT_TEST`` or ``JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET=1``).
+    Never clears ``JOBOPS_AGENT_ROLE`` and never installs privilege credentials.
+    """
+    allowed = (
+        "PYTEST_CURRENT_TEST" in os.environ
+        or (os.environ.get("JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET") or "0") == "1"
+    )
+    if not allowed:
+        raise AuthorityError("control_plane_reset_forbidden_outside_tests")
     _tls.agent_contaminated = False
     _tls.contamination_reason = ""
     _tls.control_plane_seal = None
@@ -459,6 +476,32 @@ def verify_authority_grant(
     return grant
 
 
+def issue_orchestrator_grant(
+    workspace_home: Path | str,
+    *,
+    principal: str = "orchestrator",
+    scopes: Optional[Sequence[str]] = None,
+    ttl_sec: int = DEFAULT_GRANT_TTL_SEC,
+) -> AuthorityGrant:
+    """
+    Production path: issue a grant only when privilege credentials already exist.
+
+    Never installs ``control_plane.privilege``. Callers (including ``jobops approve``)
+    must provision via ``jobops control-plane provision`` / ``install_control_plane_privilege``
+    beforehand. Still refuses agent roles and contaminated processes.
+    """
+    home = Path(workspace_home).expanduser().resolve()
+    require_privileged_access(home)
+    seal = current_control_plane_seal()
+    if seal is None or Path(seal.workspace_home).resolve() != home:
+        seal = bootstrap_control_plane(home)
+    return ControlPlaneController(home, seal).issue_grant(
+        principal=principal,
+        scopes=scopes,
+        ttl_sec=ttl_sec,
+    )
+
+
 def issue_test_grant(
     workspace_home: Path | str,
     *,
@@ -467,18 +510,17 @@ def issue_test_grant(
     ttl_sec: int = DEFAULT_GRANT_TTL_SEC,
 ) -> AuthorityGrant:
     """
-    Test/CLI helper: ensure privilege credential, bootstrap (if needed), issue grant.
+    Test/provision helper: may install privilege credential, then issue a grant.
 
-    Still refuses agent roles and contaminated processes. ``bootstrap_control_plane``
-    itself never auto-creates the privilege file — only this helper / ``jobops init``
-    / ``install_control_plane_privilege`` may install it.
+    Production approval must use ``issue_orchestrator_grant`` instead. Still refuses
+    agent roles and contaminated processes. ``bootstrap_control_plane`` itself never
+    auto-creates the privilege file — only this helper / ``jobops control-plane
+    provision`` / ``jobops init`` / ``install_control_plane_privilege`` may install it.
     """
     home = Path(workspace_home).expanduser().resolve()
     install_control_plane_privilege(home)
-    seal = current_control_plane_seal()
-    if seal is None or Path(seal.workspace_home).resolve() != home:
-        seal = bootstrap_control_plane(home)
-    return ControlPlaneController(home, seal).issue_grant(
+    return issue_orchestrator_grant(
+        home,
         principal=principal,
         scopes=scopes,
         ttl_sec=ttl_sec,

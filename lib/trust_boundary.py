@@ -29,6 +29,8 @@ SECRET_ENV_EXACT = frozenset(
         "JOBOPS_ISSUANCE_AUTHORITY",
         "JOBOPS_CONTROL_PLANE_TOKEN",
         "JOBOPS_CONTROL_PLANE",
+        "JOBOPS_ALLOW_TEST_CONFIRMATION",
+        "JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET",
         "GOOGLE_APPLICATION_CREDENTIALS",
         "GOOGLE_API_KEY",
         "OPENAI_API_KEY",
@@ -213,11 +215,16 @@ def open_orchestrator(
     principal: str = "orchestrator",
     scopes: Optional[Sequence[str]] = None,
 ) -> Iterator[OrchestratorAuthority]:
-    """Bootstrap control plane (if needed), issue a grant, and enter context."""
-    from authority import issue_test_grant
+    """
+    Bootstrap seal (if needed), issue a grant, and enter context.
+
+    Requires a pre-existing OS-gated privilege credential — never installs one.
+    Provision via ``jobops control-plane provision`` / ``install_control_plane_privilege``.
+    """
+    from authority import issue_orchestrator_grant
 
     home = Path(workspace_home).expanduser().resolve()
-    grant = issue_test_grant(home, principal=principal, scopes=scopes)
+    grant = issue_orchestrator_grant(home, principal=principal, scopes=scopes)
     with OrchestratorContext(grant=grant, workspace_home=home) as auth:
         yield auth
 

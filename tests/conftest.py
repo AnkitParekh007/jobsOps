@@ -35,6 +35,9 @@ def _jobops_test_security_defaults(monkeypatch, tmp_path_factory):
     monkeypatch.setenv("JOBOPS_ALLOW_UNSANDBOXED_AGENT", "0")
     # Enable protected control-plane bootstrap for tests (never inherited by agents).
     monkeypatch.setenv("JOBOPS_CONTROL_PLANE", "1")
+    # Authenticated test config for synthetic confirmation channels + TLS reset.
+    monkeypatch.setenv("JOBOPS_ALLOW_TEST_CONFIRMATION", "1")
+    monkeypatch.setenv("JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET", "1")
     # Fresh control-plane state per test.
     from authority import reset_control_plane_for_tests
 
@@ -85,16 +88,32 @@ def control_plane_home_for(path: Path) -> Path:
     return home
 
 
-def open_test_orchestrator(workspace_home: Path, *, principal: str = "pytest"):
-    """Issue a verified grant and return an OrchestratorContext manager."""
-    from authority import install_control_plane_privilege, reset_control_plane_for_tests
-    from trust_boundary import open_orchestrator
+def provision_test_control_plane(workspace_home: Path) -> Path:
+    """
+    Test helper: ensure secrets/state dirs + privilege exist without elevating via approve.
 
+    Production ``open_orchestrator`` never installs privilege; tests must provision first.
+    """
+    from authority import install_control_plane_privilege, reset_control_plane_for_tests
+
+    home = Path(workspace_home).expanduser().resolve()
+    (home / "secrets").mkdir(parents=True, exist_ok=True)
+    (home / "state").mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("JOBOPS_CONTROL_PLANE", "1")
+    os.environ.setdefault("JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET", "1")
+    os.environ.setdefault("JOBOPS_ALLOW_TEST_CONFIRMATION", "1")
     reset_control_plane_for_tests()
     os.environ.pop("JOBOPS_AGENT_ROLE", None)
-    os.environ.setdefault("JOBOPS_CONTROL_PLANE", "1")
-    install_control_plane_privilege(workspace_home)
-    return open_orchestrator(workspace_home, principal=principal)
+    install_control_plane_privilege(home)
+    return home
+
+
+def open_test_orchestrator(workspace_home: Path, *, principal: str = "pytest"):
+    """Issue a verified grant and return an OrchestratorContext manager."""
+    from trust_boundary import open_orchestrator
+
+    home = provision_test_control_plane(workspace_home)
+    return open_orchestrator(home, principal=principal)
 
 
 def record_approved_for_test(ledger: Any, **kwargs: Any) -> str:

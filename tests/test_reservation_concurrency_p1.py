@@ -71,6 +71,7 @@ def _worker_reserve(args: tuple) -> tuple[bool, str]:
     from authority import install_control_plane_privilege
 
     os.environ["JOBOPS_CONTROL_PLANE"] = "1"
+    os.environ["JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET"] = "1"
     os.environ.pop("JOBOPS_AGENT_ROLE", None)
     reset_control_plane_for_tests()
     install_control_plane_privilege(Path(home))
@@ -96,7 +97,11 @@ def test_cross_process_daily_cap(jobops_home: Path, monkeypatch):
     db = str(jobops_home / "state" / "xproc.db")
     home = str(jobops_home)
     today = "2099-06-01"
-    # Ensure schema exists before workers attach.
+    # Ensure schema + authority/confirmation keys exist before workers attach.
+    from authority import bootstrap_control_plane
+
+    reset_control_plane_for_tests()
+    bootstrap_control_plane(jobops_home)
     led = Ledger(db)
     led.close()
 
@@ -287,6 +292,7 @@ def _worker_authorize(args: tuple) -> bool:
     from authority import install_control_plane_privilege
 
     os.environ["JOBOPS_CONTROL_PLANE"] = "1"
+    os.environ["JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET"] = "1"
     os.environ["JOBOPS_EVIDENCE_SECRET"] = SECRET.decode()
     os.environ["JOBOPS_ALLOW_SUBMIT"] = "1"
     os.environ["JOBOPS_ALLOW_FIXTURE_EVIDENCE"] = "1"
@@ -360,6 +366,10 @@ def test_cross_process_authorize_daily_cap(jobops_home: Path, monkeypatch):
     monkeypatch.setenv("JOBOPS_ALLOW_FIXTURE_EVIDENCE", "1")
     db = str(jobops_home / "state" / "authz-xproc.db")
     home = str(jobops_home)
+    from authority import bootstrap_control_plane
+
+    reset_control_plane_for_tests()
+    bootstrap_control_plane(jobops_home)
     Ledger(db).close()
 
     with mp.get_context("spawn").Pool(processes=4) as pool:

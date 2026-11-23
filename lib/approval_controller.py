@@ -38,6 +38,9 @@ from trust_boundary import (  # noqa: E402
 
 DEFAULT_SESSION_TTL_SEC = 900
 
+# Marker attribute for production-trusted interactive channels (TTY).
+_TRUSTED_INTERACTIVE_ATTR = "_jobops_trusted_interactive"
+
 
 class ApprovalAuthError(PermissionError):
     """Raised when approval create/decide is refused."""
@@ -131,6 +134,8 @@ class ConfirmationChannel(Protocol):
 class TtyConfirmationChannel:
     """Trusted interactive TTY channel — model code cannot drive this silently."""
 
+    _jobops_trusted_interactive = True
+
     def present_and_confirm(self, prompt: ConfirmationPrompt) -> str:
         if not sys.stdin.isatty() or not sys.stdout.isatty():
             raise ApprovalAuthError("interactive_tty_required")
@@ -142,26 +147,46 @@ class TtyConfirmationChannel:
             raise ApprovalAuthError("interactive_confirmation_aborted") from exc
 
 
-class EchoChallengeChannel:
+def _is_trusted_interactive_channel(channel: object) -> bool:
+    return bool(getattr(channel, _TRUSTED_INTERACTIVE_ATTR, False))
+
+
+def _authorize_test_confirmation_channel(workspace_home: Path) -> None:
     """
-    Test-only channel that correctly echoes the challenge.
+    Allow non-TTY confirmation channels only under authenticated test config.
 
-    Still goes through InteractiveApprovalGate MAC + ledger binding — it does
-    not bypass confirmation verification, only supplies the interactive response.
+    Requires ``JOBOPS_ALLOW_TEST_CONFIRMATION=1``, a pre-existing privilege
+    credential, and a non-agent process. Production approval never sets this flag.
     """
+    import os
 
-    def present_and_confirm(self, prompt: ConfirmationPrompt) -> str:
-        return prompt.challenge
+    if (os.environ.get("JOBOPS_ALLOW_TEST_CONFIRMATION") or "0") != "1":
+        raise ApprovalAuthError("confirmation_channel_substitution_forbidden")
+    if is_untrusted_agent_role(agent_role_from_env()):
+        raise ApprovalAuthError("confirmation_channel_forbidden_in_agent_role")
+    try:
+        require_privileged_access(workspace_home)
+    except AuthorityError as exc:
+        raise ApprovalAuthError(
+            f"confirmation_channel_privilege_denied:{exc}"
+        ) from exc
 
 
-class FabricatedConfirmationChannel:
-    """Adversarial channel that returns a fabricated (wrong) confirmation."""
-
-    def __init__(self, response: str = "fabricated-confirmation") -> None:
-        self.response = response
-
-    def present_and_confirm(self, prompt: ConfirmationPrompt) -> str:
-        return self.response
+def resolve_confirmation_channel(
+    channel: Optional[ConfirmationChannel],
+    *,
+    workspace_home: Path | str,
+) -> ConfirmationChannel:
+    """
+    Production default is TTY. Synthetic / echo channels require test auth.
+    """
+    home = Path(workspace_home).expanduser().resolve()
+    if channel is None:
+        return TtyConfirmationChannel()
+    if _is_trusted_interactive_channel(channel):
+        return channel
+    _authorize_test_confirmation_channel(home)
+    return channel
 
 
 @dataclass(frozen=True)
@@ -251,7 +276,9 @@ class InteractiveApprovalGate:
             raise ApprovalAuthError(f"interactive_gate_privilege_denied:{exc}") from exc
         self.ledger = ledger
         self.workspace_home = home
-        self.channel: ConfirmationChannel = channel or TtyConfirmationChannel()
+        self.channel: ConfirmationChannel = resolve_confirmation_channel(
+            channel, workspace_home=home
+        )
         self._secret = load_or_create_confirmation_key(home)
 
     def confirm_and_issue_session(
@@ -456,9 +483,9 @@ def issue_confirmed_session(
     """
     Preferred entry: interactive gate → confirmation receipt → stored session.
 
-    Default channel is TTY (InteractiveApprovalGate). Tests must pass an explicit
-    ``EchoChallengeChannel``; model-controlled code cannot supply a valid echo
-    without going through the gate's challenge.
+    Default channel is TTY. Synthetic echo channels are refused unless an
+    authenticated test configuration is active (``JOBOPS_ALLOW_TEST_CONFIRMATION=1``
+    + privilege). Model-controlled code cannot mint a valid echo without the gate.
     """
     gate = InteractiveApprovalGate(
         ledger,
@@ -510,7 +537,7 @@ def mint_user_session(
     if channel is None:
         raise ApprovalAuthError(
             "confirmation_channel_or_receipt_required:"
-            "pass InteractiveApprovalGate / EchoChallengeChannel / ConfirmationReceipt"
+            "pass InteractiveApprovalGate / TtyConfirmationChannel / ConfirmationReceipt"
         )
     return issue_confirmed_session(
         ledger=ledger,
@@ -633,6 +660,8 @@ class ApprovalController:
         home = workspace_home or self.workspace_home
         if home is None:
             raise ApprovalAuthError("workspace_home_required")
+        # resolve_confirmation_channel runs inside InteractiveApprovalGate —
+        # synthetic channels cannot substitute into production without test auth.
         session = issue_confirmed_session(
             ledger=self.ledger,
             workspace_home=home,

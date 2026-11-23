@@ -12,8 +12,8 @@
 
 ## Trust boundaries
 1. **Untrusted:** job postings, email bodies, scraped HTML, agent prompts/outputs, provider CLIs.
-2. **Trusted control plane:** `jobops` CLI with `JOBOPS_CONTROL_PLANE=1` **and** OS-openable `secrets/control_plane.privilege`, `ControlPlaneController`–issued `AuthorityGrant`, `OrchestratorContext`, ledger, `ToolBroker`, `AgentSandbox`, `InteractiveApprovalGate` / `SessionIssuer`, `TrustedEvidenceIssuer`.
-3. **Installation secrets:** evidence HMAC + authority + confirmation keys + privilege credential — never embedded defaults, never inherited into agent child environments (`JOBOPS_HOME` / `PYTHONPATH` / `JOBOPS_CONTROL_PLANE` stripped).
+2. **Trusted control plane:** `jobops` CLI with `JOBOPS_CONTROL_PLANE=1` **and** OS-openable `secrets/control_plane.privilege` (provisioned separately via `jobops control-plane provision`, never by `jobops approve`), `ControlPlaneController`–issued `AuthorityGrant`, `OrchestratorContext`, ledger, `ToolBroker`, `AgentSandbox`, `InteractiveApprovalGate` / `SessionIssuer` (TTY-only in production; synthetic confirmation channels require authenticated test config), `TrustedEvidenceIssuer`.
+3. **Installation secrets:** evidence HMAC + authority + confirmation keys + privilege credential — never embedded defaults, never inherited into agent child environments (`JOBOPS_HOME` / `PYTHONPATH` / `JOBOPS_CONTROL_PLANE` / test-confirmation flags stripped). Mode `0600`/`0700` restricts *other* OS users; **same-OS-user** processes that can open the workspace remain a residual risk (not a TEE/HSM boundary).
 
 ## Key threats and mitigations
 
@@ -28,8 +28,8 @@
 | T7 | Accidental live submit | `JOBOPS_ALLOW_SUBMIT` / `JOBOPS_ENABLE_LIVE_SUBMIT` default `0` | Misconfiguration by operator |
 | T8 | Evidence issuance from agent process | Issuer requires verified `AuthorityGrant` inside `OrchestratorContext` (not merely clearing `JOBOPS_AGENT_ROLE`) + approved ledger row; control-plane flag never given to agents | Logical isolation, not hardware TEE; same-OS-user key theft remains residual |
 | T9 | Agent inherits signing/approval secrets | `build_agent_subprocess_env` explicit allowlist; secret keys + `JOBOPS_HOME` / `PYTHONPATH` / `JOBOPS_CONTROL_PLANE` stripped | Operator must not mount secrets into agent-readable workspaces |
-| T10 | Agent self-approves submissions | Approvals start `pending`; `InteractiveApprovalGate` requires principal match + challenge echo; MAC'd receipts; fabricated confirmation / principal mismatch / replay rejected; atomic bind+consume+decide | Session token theft within TTL before consume; same-OS-user TTY hijack |
-| T11 | Self-minted orchestrator privileges | `ControlPlaneController` issues signed grants; privilege credential required (env alone insufficient); agent contamination blocks bootstrap | Same-OS-user that can open privilege file + env can still issue grants |
+| T10 | Agent self-approves submissions | Approvals start `pending`; production uses TTY only; synthetic/`EchoChallengeChannel` substitution forbidden without `JOBOPS_ALLOW_TEST_CONFIRMATION`; MAC'd receipts; fabricated confirmation / principal mismatch / replay rejected; atomic bind+consume+decide | Session token theft within TTL before consume; same-OS-user TTY hijack |
+| T11 | Self-minted orchestrator privileges | `ControlPlaneController` issues signed grants; privilege credential required (env alone insufficient); `jobops approve` never installs privilege / never clears `JOBOPS_AGENT_ROLE` / never calls test reset; agent contamination blocks bootstrap | Same-OS-user that can open privilege file + env can still issue grants |
 | T12 | Unsandboxed AI on sensitive workflows | `frontier_submit` / `outreach` refuse `JOBOPS_ALLOW_UNSANDBOXED_AGENT=1` | Other roles may still opt into residual unsandboxed risk |
 
 ## Out of scope (explicit)

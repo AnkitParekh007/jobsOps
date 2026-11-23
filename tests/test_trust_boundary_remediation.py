@@ -20,11 +20,11 @@ from agent_sandbox import AgentSandbox, SandboxViolation, require_enforceable_re
 from approval_controller import (
     ApprovalAuthError,
     ApprovalController,
-    EchoChallengeChannel,
     UserSession,
     issue_confirmed_session,
     mint_user_session,
 )
+from confirmation_test_channels import EchoChallengeChannel
 from authority import (
     AuthorityError,
     ControlPlaneController,
@@ -378,6 +378,7 @@ def test_pending_approval_cannot_issue_evidence(jobops_home: Path, monkeypatch):
 def _reserve_cap_worker(args: tuple) -> tuple[bool, str]:
     db, home, i, today = args
     os.environ["JOBOPS_CONTROL_PLANE"] = "1"
+    os.environ["JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET"] = "1"
     os.environ.pop("JOBOPS_AGENT_ROLE", None)
     reset_control_plane_for_tests()
     led = Ledger(db)
@@ -402,6 +403,8 @@ def test_atomic_submission_reservations_enforce_daily_cap(jobops_home: Path, mon
     db = str(jobops_home / "state" / "res.db")
     home = str(jobops_home)
     today = "2099-01-15"
+    reset_control_plane_for_tests()
+    bootstrap_control_plane(jobops_home)
     Ledger(db).close()
 
     with mp.get_context("spawn").Pool(processes=4) as pool:

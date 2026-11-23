@@ -19,8 +19,8 @@
   - Fail closed when third-party CLI restrictions cannot be verified; **sensitive roles (`frontier_submit`, `outreach`) never allow unsandboxed opt-in**
   - Privileged tools only for `frontier_submit`; submit kill switches
   - `ControlPlaneController` signed `AuthorityGrant` required for `OrchestratorContext`
-  - Interactive `InteractiveApprovalGate` → MAC'd `ConfirmationReceipt` → stored single-use `UserSession` (TTY challenge; model code cannot fabricate)
-  - Control plane requires OS-openable `secrets/control_plane.privilege` (mode 0600) — env flag alone fails closed
+  - Interactive `InteractiveApprovalGate` → MAC'd `ConfirmationReceipt` → stored single-use `UserSession` (production TTY only; synthetic channels need authenticated test config)
+  - Control plane requires pre-provisioned OS-openable `secrets/control_plane.privilege` (mode 0600; `jobops control-plane provision`) — env flag alone fails closed; approve never auto-installs
   - HMAC evidence + durable approvals; approve bind/consume/decide is atomic (`BEGIN IMMEDIATE`)
   - Permanent `application_identities` guard across dates/runs; atomic `submission_reservations` **required** before authorize; consume on Applied/Submitted; `uncertain` blocks retry
   - Cross-process SQLite reservation / daily-cap serialization (`BEGIN IMMEDIATE`)

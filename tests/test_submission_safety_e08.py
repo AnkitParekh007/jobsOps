@@ -124,11 +124,11 @@ def test_form_lock_held_can_authorize(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("JOBOPS_EVIDENCE_SECRET", TEST_SECRET.decode())
     monkeypatch.setenv("JOBOPS_ALLOW_FIXTURE_EVIDENCE", "1")
     ev = data["evidence_package"]
-    from trust_boundary import open_orchestrator
+    from conftest import open_test_orchestrator
 
     home = tmp_path / "jobops-home"
     home.mkdir(exist_ok=True)
-    with open_orchestrator(home, principal="pytest"):
+    with open_test_orchestrator(home, principal="pytest"):
         led.record_approval(
             approval_id=str(ev["approval_id"]),
             user_id=str(ev["user_id"]),
