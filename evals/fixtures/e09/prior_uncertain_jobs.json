@@ -1,0 +1,31 @@
+{
+  "jobs": [
+    {
+      "job_key": "url:https://jobs.ashbyhq.com/acme/uncertain-1",
+      "canonical_url": "https://jobs.ashbyhq.com/acme/uncertain-1",
+      "organization": "Acme",
+      "role": "Forward Deployed Engineer",
+      "status": "SubmissionUncertain",
+      "country": "Germany",
+      "lane": 1
+    },
+    {
+      "job_key": "url:https://jobs.ashbyhq.com/beta/uncertain-2",
+      "canonical_url": "https://jobs.ashbyhq.com/beta/uncertain-2",
+      "organization": "Beta Corp",
+      "role": "Frontend Architect",
+      "status": "SubmissionUncertain",
+      "country": "Germany",
+      "lane": 2
+    },
+    {
+      "job_key": "url:https://jobs.lever.co/gamma/applied-3",
+      "canonical_url": "https://jobs.lever.co/gamma/applied-3",
+      "organization": "Gamma",
+      "role": "Product Engineer",
+      "status": "Applied",
+      "country": "Ireland",
+      "lane": 1
+    }
+  ]
+}

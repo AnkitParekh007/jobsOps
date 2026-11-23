@@ -1,0 +1,33 @@
+{
+  "description": "Valid materials package — ATS≥80, quality≥75, matching fingerprint, identity in extract",
+  "job_key": "url:https://jobs.ashbyhq.com/acme/frontend-1",
+  "canonical_url": "https://jobs.ashbyhq.com/acme/frontend-1",
+  "organization": "Acme",
+  "role": "Senior Frontend Engineer",
+  "ats_score": 86,
+  "quality_score": 82,
+  "pdf_fingerprint": "aaa111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "ats_score_fingerprint": "aaa111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "quality_score_fingerprint": "aaa111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "fingerprint_method": "fixture",
+  "extracted_text": "Alex Candidate\nSenior Frontend Engineer\nAngular React TypeScript enterprise frontend RAG agentic workflows\nProfessional Experience\nBluemeteor — SOP Co-Pilot",
+  "checklist": {
+    "posting_open": true,
+    "not_duplicate": true,
+    "hard_eligibility_met": true,
+    "pdf_validated": true,
+    "fingerprint_matches_scores": true,
+    "ats_gate": true,
+    "quality_gate": true,
+    "filenames_correct": true,
+    "required_fields_complete": true,
+    "screening_answers_verified": true,
+    "no_auth_wall": true,
+    "session_authorized_if_needed": true,
+    "form_lock_held": false,
+    "auto_submit_or_user_approved": false,
+    "daily_cap_allows": true
+  },
+  "require_human_approval": true,
+  "expected_state": "ReadyForApproval"
+}

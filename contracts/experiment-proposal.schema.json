@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jobops.local/contracts/experiment-proposal.schema.json",
+  "title": "ExperimentProposal",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "proposal_id",
+    "title",
+    "hypothesis",
+    "variants",
+    "success_metric",
+    "rollback_conditions",
+    "proposal_only",
+    "mutates_policy",
+    "approval_required",
+    "approval_status",
+    "evidence_refs",
+    "policy_version"
+  ],
+  "properties": {
+    "proposal_id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "hypothesis": { "type": "string", "minLength": 1 },
+    "variants": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["name", "description"],
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "success_metric": { "type": "string", "minLength": 1 },
+    "rollback_conditions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "lane_country": { "type": "string" },
+    "matured_apps": { "type": "integer", "minimum": 0 },
+    "proposal_only": { "type": "boolean", "const": true },
+    "mutates_policy": { "type": "boolean", "const": false },
+    "approval_required": { "type": "boolean", "const": true },
+    "approval_status": {
+      "type": "string",
+      "enum": ["pending", "approved", "rejected", "rolled_back"]
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "policy_version": { "type": "string", "minLength": 1 },
+    "notes": { "type": "string" }
+  }
+}

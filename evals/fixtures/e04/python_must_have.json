@@ -1,0 +1,19 @@
+{
+  "canonical_url": "https://boards.greenhouse.io/example/jobs/2002",
+  "employer_or_ats_url": "https://boards.greenhouse.io/example/jobs/2002",
+  "organization": "PyForce",
+  "role": "Forward Deployed Engineer",
+  "status": "Eligible",
+  "lane": 1,
+  "country": "Ireland",
+  "source": "Greenhouse",
+  "reason": "Python must-have",
+  "posting_text": "Must-have Python for tooling. We sponsor visas for Dublin transfers.",
+  "availability": "open",
+  "sponsorship_quote": "We sponsor visas for Dublin transfers.",
+  "evidence_refs": [
+    "https://boards.greenhouse.io/example/jobs/2002"
+  ],
+  "expected_decision": "Skipped",
+  "must_not_be_eligible": true
+}

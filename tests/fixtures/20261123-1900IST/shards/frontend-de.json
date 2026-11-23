@@ -1,0 +1,21 @@
+{
+  "shard_id": "frontend-de",
+  "run_id": "20261123-1900IST",
+  "lane": 0,
+  "lane_name": "unknown",
+  "country": "unknown",
+  "mode": "http",
+  "exhausted": true,
+  "sources_tried": [
+    "worker-failed-or-empty"
+  ],
+  "sources_blocked": [
+    {
+      "source": "worker",
+      "reason": "no shard file"
+    }
+  ],
+  "sources_remaining_readable": [],
+  "matches": [],
+  "notes": "harness stub after worker rc=1"
+}

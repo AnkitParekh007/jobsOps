@@ -1,0 +1,239 @@
+{
+  "shard_id": "fde-ie",
+  "run_id": "20261123-1900IST",
+  "lane": 1,
+  "lane_name": "forward-deployed",
+  "country": "Ireland",
+  "mode": "http",
+  "exhausted": false,
+  "sources_tried": [
+    "Ashby boards (Kota, Wonderful, Protex AI, LiveKit, Chalk, Whippy, Notion, OpenAI, Cognition, Cohere)",
+    "Greenhouse boards API (MongoDB, GitLab, Intercom, Stripe + scan)",
+    "Workday ATS HTML (Workday Dublin FDE JR-0111296 / JR-0111348)",
+    "Salesforce Workday CXS Dublin FDE postings",
+    "Analog Devices Workday Ireland Limerick FDE",
+    "Accenture Ireland careers + Accenture Workday",
+    "ServiceNow SmartRecruiters Dublin Applied AI FDE",
+    "EY careers Dublin Forward Deployed AI Engineer",
+    "Google Careers Dublin Forward Deployed Engineer GenAI",
+    "GemPool Dublin FDE contract listing",
+    "IrishJobs.ie FDE search (HTTP)",
+    "Indeed Ireland (skipped; exclusion + prior 403)",
+    "Stripe Greenhouse Dublin Forward Deployed Security Engineer"
+  ],
+  "sources_blocked": [
+    {
+      "source": "IrishJobs.ie",
+      "reason": "Akamai Access Denied / 403 on public search HTML in http mode"
+    },
+    {
+      "source": "Indeed Ireland",
+      "reason": "exclusion-index search URL; JS/CAPTCHA \u2014 skipped in http mode"
+    },
+    {
+      "source": "ServiceNow careers.servicenow.com deep link",
+      "reason": "HTTP 403; used SmartRecruiters public page instead"
+    },
+    {
+      "source": "Workday CXS jobs POST API",
+      "reason": "HTTP 400 without browser session; used public job HTML instead"
+    },
+    {
+      "source": "Notion Forward Deployed Architect Dublin",
+      "reason": "Lane miss vs Engineer query titles \u2014 omitted"
+    }
+  ],
+  "sources_remaining_readable": [
+    "More employer career pages beyond opened ATS set",
+    "Glassdoor Ireland with authenticated session (search URL historically excluded)",
+    "Accenture Forward Deployed Engineering Manager R00345674 (manager title; not counted toward Engineer query)"
+  ],
+  "duplicates_seen": [
+    "https://jobs.ashbyhq.com/Protex%20AI/b4f2b6f9-a55c-474b-b76c-872d69255c37",
+    "https://jobs.ashbyhq.com/livekit/529000fe-c437-41d3-94a3-8548e61c31b8",
+    "https://jobs.ashbyhq.com/chalk/262b99de-c605-42d8-bf9d-d65528112122",
+    "https://jobs.ashbyhq.com/whippy/3e8eac61-a3bb-46db-b463-f5f5754d8dc9",
+    "https://jobs.ashbyhq.com/whippy/978fa940-e3e0-4e39-98b3-e686db13b70f",
+    "https://jobs.ashbyhq.com/whippy/58ae891a-e3d5-41c0-940c-2b3e1ca63435",
+    "https://jobs.ashbyhq.com/prudentia-sciences/8b143cfa-f012-44e0-8e1a-8b48841cb9e5",
+    "https://job-boards.greenhouse.io/gitlab/jobs/8936153002",
+    "https://www.mongodb.com/careers/jobs/7590735",
+    "https://job-boards.greenhouse.io/intercom/jobs/8405770",
+    "https://job-boards.greenhouse.io/intercom/jobs/8333690",
+    "https://job-boards.greenhouse.io/intercom/jobs/8333679",
+    "https://jobs.smartrecruiters.com/sia/744000162753140",
+    "https://www.irishjobs.ie/jobs/forward-deployed-engineer/in-dublin",
+    "https://ie.indeed.com/jobs",
+    "https://www.glassdoor.ie/Job/dublin-forward-deployed-engineer-jobs-SRCH_IL.0",
+    "https://workday.wd5.myworkdayjobs.com/en-US/Workday/job/Senior-Forward-Deployed-Engineer_JR-0111298",
+    "https://workday.wd5.myworkdayjobs.com/Workday/job/Ireland-Dublin/Applied-AI-Engineer_JR-0111323"
+  ],
+  "matches": [
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/Kota/cf1dc9c1-dcfb-48ff-aade-8b11c5180216",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/Kota/cf1dc9c1-dcfb-48ff-aade-8b11c5180216",
+      "organization": "Kota",
+      "role": "Forward Deployed Engineer",
+      "status": "Needs review",
+      "lane": 1,
+      "country": "Ireland",
+      "source": "Ashby",
+      "reason": "Dublin remote FDE; TypeScript/Python/C# stack; IE sponsorship not evidenced"
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/wonderful/d90df28f-3d47-4ea7-bcf5-bc69fe1cf373",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/wonderful/d90df28f-3d47-4ea7-bcf5-bc69fe1cf373",
+      "organization": "Wonderful",
+      "role": "Forward Deployed Engineer",
+      "status": "Needs review",
+      "lane": 1,
+      "country": "Ireland",
+      "source": "Ashby",
+      "reason": "Ireland FDE posting live on Ashby; IE sponsorship not evidenced"
+    },
+    {
+      "canonical_url": "https://workday.wd5.myworkdayjobs.com/en-US/Workday/job/Ireland-Dublin/Forward-Deployed-Engineer_JR-0111296",
+      "employer_or_ats_url": "https://workday.wd5.myworkdayjobs.com/en-US/Workday/job/Ireland-Dublin/Forward-Deployed-Engineer_JR-0111296",
+      "organization": "Workday",
+      "role": "Forward Deployed Engineer (FDE) - Developer Platform",
+      "status": "Needs review",
+      "lane": 1,
+      "country": "Ireland",
+      "source": "Workday ATS",
+      "reason": "Dublin FDE Developer Platform; coding listed as e.g. Python/Java or similar; IE sponsorship not evidenced"
+    },
+    {
+      "canonical_url": "https://workday.wd5.myworkdayjobs.com/en-US/Workday/job/Forward-Deployed-Engineer--FDE---Software-Development_JR-0111348",
+      "employer_or_ats_url": "https://workday.wd5.myworkdayjobs.com/en-US/Workday/job/Forward-Deployed-Engineer--FDE---Software-Development_JR-0111348",
+      "organization": "Workday",
+      "role": "Principal Forward Deployed Engineer (FDE), Software Development",
+      "status": "Needs review",
+      "lane": 1,
+      "country": "Ireland",
+      "source": "Workday ATS",
+      "reason": "Dublin Principal FDE; agentic/LLM field role; IE sponsorship not evidenced"
+    },
+    {
+      "canonical_url": "https://job-boards.greenhouse.io/mongodb/jobs/7392902",
+      "employer_or_ats_url": "https://www.mongodb.com/careers/job/?gh_jid=7392902",
+      "organization": "MongoDB",
+      "role": "Senior Software Engineer, Forward Deployed AI Engineer",
+      "status": "Needs review",
+      "lane": 1,
+      "country": "Ireland",
+      "source": "Greenhouse / MongoDB careers",
+      "reason": "Cork/Dublin hybrid Forward Deployed AI Engineer; IE sponsorship not evidenced"
+    },
+    {
+      "canonical_url": "https://salesforce.wd12.myworkdayjobs.com/en-US/External_Career_Site/job/D360-Forward-Deployed-Engineer_JR361115-1",
+      "employer_or_ats_url": "https://salesforce.wd12.myworkdayjobs.com/en-US/External_Career_Site/job/D360-Forward-Deployed-Engineer_JR361115-1",
+      "organization": "Salesforce",
+      "role": "D360 Forward Deployed Engineer",
+      "status": "Needs review",
+      "lane": 1,
+      "country": "Ireland",
+      "source": "Salesforce Workday",
+      "reason": "Dublin Data 360 FDE; Apex/Java/Python/JS/TS delivery; IE sponsorship not evidenced"
+    },
+    {
+      "canonical_url": "https://salesforce.wd12.myworkdayjobs.com/en-US/External_Career_Site/job/Forward-Deployed-Engineer-Dutch-German-speakers_JR363569",
+      "employer_or_ats_url": "https://salesforce.wd12.myworkdayjobs.com/en-US/External_Career_Site/job/Forward-Deployed-Engineer-Dutch-German-speakers_JR363569",
+      "organization": "Salesforce",
+      "role": "Forward Deployed Engineer Dutch/German speakers",
+      "status": "Skipped",
+      "lane": 1,
+      "country": "Ireland",
+      "source": "Salesforce Workday",
+      "reason": "Hard language gate: fluent English + Dutch or German required"
+    },
+    {
+      "canonical_url": "https://salesforce.wd12.myworkdayjobs.com/en-US/External_Career_Site/job/Forward-Deployed-Engineer-French-Arabic-speakers_JR363570",
+      "employer_or_ats_url": "https://salesforce.wd12.myworkdayjobs.com/en-US/External_Career_Site/job/Forward-Deployed-Engineer-French-Arabic-speakers_JR363570",
+      "organization": "Salesforce",
+      "role": "Forward Deployed Engineer French/Arabic speakers",
+      "status": "Skipped",
+      "lane": 1,
+      "country": "Ireland",
+      "source": "Salesforce Workday",
+      "reason": "Hard language gate: fluent English + French and Arabic required"
+    },
+    {
+      "canonical_url": "https://jobs.smartrecruiters.com/ServiceNow/744000162813139",
+      "employer_or_ats_url": "https://jobs.smartrecruiters.com/ServiceNow/744000162813139",
+      "organization": "ServiceNow",
+      "role": "Forward Deployed Solution Engineer \u2013 Applied AI FDE",
+      "status": "Needs review",
+      "lane": 1,
+      "country": "Ireland",
+      "source": "SmartRecruiters",
+      "reason": "Dublin Applied AI FDE; customer-embedded build role; IE sponsorship not evidenced"
+    },
+    {
+      "canonical_url": "https://jobs.smartrecruiters.com/ServiceNow/744000156764110",
+      "employer_or_ats_url": "https://jobs.smartrecruiters.com/ServiceNow/744000156764110",
+      "organization": "ServiceNow",
+      "role": "Forward Deployed Solution Engineer \u2013 Applied AI FDE",
+      "status": "Needs review",
+      "lane": 1,
+      "country": "Ireland",
+      "source": "SmartRecruiters",
+      "reason": "Separate Dublin Applied AI FDE req still live; IE sponsorship not evidenced"
+    },
+    {
+      "canonical_url": "https://www.accenture.com/ie-en/careers/jobdetails?id=R00345688_en",
+      "employer_or_ats_url": "https://accenture.wd103.myworkdayjobs.com/en-US/AccentureCareers/job/Forward-Deployed-Engineer_R00345688",
+      "organization": "Accenture",
+      "role": "Forward Deployed Engineering Specialist",
+      "status": "Needs review",
+      "lane": 1,
+      "country": "Ireland",
+      "source": "Accenture Ireland careers / Workday",
+      "reason": "Dublin FDE Specialist (Forward Deployed AI Engineer); IE sponsorship not evidenced"
+    },
+    {
+      "canonical_url": "https://analogdevices.wd1.myworkdayjobs.com/en-US/External/job/Ireland-Limerick/Senior-Forward-Deployed-Engineer_R266925",
+      "employer_or_ats_url": "https://analogdevices.wd1.myworkdayjobs.com/en-US/External/job/Ireland-Limerick/Senior-Forward-Deployed-Engineer_R266925",
+      "organization": "Analog Devices",
+      "role": "Senior Forward Deployed Engineer",
+      "status": "Skipped",
+      "lane": 1,
+      "country": "Ireland",
+      "source": "Analog Devices Workday",
+      "reason": "Hard skill gap: Strong Python required; Python proficiency not in verified facts"
+    },
+    {
+      "canonical_url": "https://analogdevices.wd1.myworkdayjobs.com/en-US/External/job/Ireland-Limerick/Forward-Deployed-Engineer_R264809",
+      "employer_or_ats_url": "https://analogdevices.wd1.myworkdayjobs.com/en-US/External/job/Ireland-Limerick/Forward-Deployed-Engineer_R264809",
+      "organization": "Analog Devices",
+      "role": "Senior Principal Forward Deployed Engineer",
+      "status": "Skipped",
+      "lane": 1,
+      "country": "Ireland",
+      "source": "Analog Devices Workday",
+      "reason": "Hard skill gap: Strong Python required on Ireland Limerick FDE posting"
+    },
+    {
+      "canonical_url": "https://careers.ey.com/ey/job/Dublin-2-UKI-Technology-Consulting-AI-&-Data-Forward-Deployed-AI-Engineer%2C-Senior-Manager/1414257133/",
+      "employer_or_ats_url": "https://careers.ey.com/ey/job/Dublin-2-UKI-Technology-Consulting-AI-&-Data-Forward-Deployed-AI-Engineer%2C-Senior-Manager/1414257133/",
+      "organization": "EY",
+      "role": "UKI Technology Consulting - AI & Data - Forward Deployed AI Engineer, Senior Manager",
+      "status": "Skipped",
+      "lane": 1,
+      "country": "Ireland",
+      "source": "EY careers",
+      "reason": "Hard gates: Python-in-production must-have; Available for Work Visa Sponsorship: NO"
+    },
+    {
+      "canonical_url": "https://www.gempool.ie/job/forward-deployed-engineer-61394271/",
+      "employer_or_ats_url": "https://www.gempool.ie/job/forward-deployed-engineer-61394271/",
+      "organization": "GemPool",
+      "role": "Forward Deployed Engineer",
+      "status": "Needs review",
+      "lane": 1,
+      "country": "Ireland",
+      "source": "GemPool",
+      "reason": "Dublin onsite 3\u20136 month FDE/automation contract; agency listing; IE sponsorship not evidenced"
+    }
+  ],
+  "notes": "http-only; stopped at target 15; IrishJobs/Indeed blocked; excluded Ashby Dublin FDEs (Protex/LiveKit/Chalk/Whippy/Prudentia) and GitLab Staff FDE recorded as duplicates_seen"
+}

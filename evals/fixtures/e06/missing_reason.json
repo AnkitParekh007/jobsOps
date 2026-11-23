@@ -1,0 +1,14 @@
+{
+  "canonical_url": "https://jobs.ashbyhq.com/example/missing-reason",
+  "employer_or_ats_url": "https://jobs.ashbyhq.com/example/missing-reason",
+  "organization": "Example",
+  "role": "Forward Deployed Engineer",
+  "status": "Needs review",
+  "lane": 1,
+  "country": "Germany",
+  "source": "Ashby",
+  "reason": "",
+  "evidence_refs": [
+    "https://jobs.ashbyhq.com/example/missing-reason"
+  ]
+}

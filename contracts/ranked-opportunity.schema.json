@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jobops.local/contracts/ranked-opportunity.schema.json",
+  "title": "RankedOpportunity",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "job_key",
+    "canonical_url",
+    "eligibility_decision",
+    "rank",
+    "shortlist",
+    "scores",
+    "gaps",
+    "evidence_refs",
+    "policy_version"
+  ],
+  "properties": {
+    "job_key": { "type": "string", "minLength": 1 },
+    "canonical_url": {
+      "type": "string",
+      "pattern": "^https?://"
+    },
+    "organization": { "type": "string" },
+    "role": { "type": "string" },
+    "lane": { "type": ["integer", "string", "null"] },
+    "country": { "type": "string" },
+    "eligibility_decision": {
+      "type": "string",
+      "enum": ["Eligible", "Needs review"]
+    },
+    "queue": {
+      "type": "string",
+      "enum": ["shortlist", "human_review", "ranked"]
+    },
+    "rank": { "type": "integer", "minimum": 1 },
+    "shortlist": { "type": "boolean" },
+    "scores": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "profile_fit",
+        "ats_keyword_coverage",
+        "interview_opportunity",
+        "priority"
+      ],
+      "properties": {
+        "profile_fit": { "type": "number", "minimum": 0, "maximum": 100 },
+        "ats_keyword_coverage": { "type": "number", "minimum": 0, "maximum": 100 },
+        "interview_opportunity": { "type": "number", "minimum": 0, "maximum": 100 },
+        "priority": { "type": "number" }
+      }
+    },
+    "score_breakdown": { "type": "object" },
+    "gaps": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "matched_terms": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "missing_terms": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "policy_version": { "type": "string", "minLength": 1 },
+    "notes": { "type": "string" }
+  }
+}

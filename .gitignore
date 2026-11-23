@@ -1,31 +1,40 @@
-# Private user data and runtime artifacts
-.env
-.env.*
-!.env.example
-.venv/
+# JobOps SQLite ledger and local state
+state/
+*.db
+*.db-wal
+*.db-shm
+
+# Runtime artifacts / private exports (never commit candidate data)
+runs/
+_sheet_exports/
+exclusion-index.json
+handoff-state.json
+last-run-report.md
+bandit.json
+
+# Python
 __pycache__/
 *.py[cod]
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-.local/
-.private/
-workspace/
-workspaces/
-state/
-runs/
-reports/private/
-artifacts/private/
-*.db
-*.db-shm
-*.db-wal
-*.sqlite
-*.sqlite3
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Local secrets / env / private workspace copies
+.env
+.env.*
+candidate-profile.json
+verified-facts.md
+consent.json
 secrets/
-credentials/
-*.pem
-*.key
-*.p12
+
+# OS / editor
 .DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Playwright / browser junk
+.playwright-mcp/

@@ -1,0 +1,19 @@
+{
+  "canonical_url": "https://boards.greenhouse.io/example/jobs/1001",
+  "employer_or_ats_url": "https://boards.greenhouse.io/example/jobs/1001",
+  "organization": "ExampleCo",
+  "role": "Forward Deployed Engineer",
+  "status": "Eligible",
+  "lane": 1,
+  "country": "Germany",
+  "source": "Greenhouse",
+  "reason": "Attempted Eligible on closed posting",
+  "posting_text": "This job is no longer available.",
+  "availability": "closed",
+  "sponsorship_quote": "We sponsor visas.",
+  "evidence_refs": [
+    "https://boards.greenhouse.io/example/jobs/1001"
+  ],
+  "expected_decision": "Closed",
+  "must_not_be_eligible": true
+}

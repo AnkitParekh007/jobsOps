@@ -1,0 +1,780 @@
+#!/bin/zsh
+# JobOps harness (Phase 4):
+#   Full: context → exclusion → workers → merge → verify → rank → frontier → validate
+#         → report_enrich → sheets/drive sync → ledger_finalize
+#         (+ optional async pipeline / outreach / learning)
+#   Pipeline-only: context → inbox_outcomes → report_enrich → sheets/drive → ledger_finalize
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+export PATH="$HOME/.local/bin:$PATH"
+
+# Modes: full (default) | pipeline (skip discovery; inbox → ledger)
+JOBOPS_MODE="${JOBOPS_MODE:-full}"
+# Parse ./run --pipeline-only (and ignore unknown flags for forward compat)
+for arg in "$@"; do
+  case "$arg" in
+    --pipeline-only) JOBOPS_MODE=pipeline ;;
+    --full) JOBOPS_MODE=full ;;
+  esac
+done
+
+# With 3×15 targets, default floor is 40 (override with HANDOFF_FLOOR=100 if desired).
+FLOOR="${HANDOFF_FLOOR:-40}"
+# Kill a hung worker after this many seconds (HTTP target-15 should finish well under this).
+WORKER_TIMEOUT_SEC="${WORKER_TIMEOUT_SEC:-720}"
+# Optional: run thin verification agent on ambiguous sponsorship queue (default off).
+VERIFY_AGENT="${VERIFY_AGENT:-0}"
+# Optional: invoke frontier-submit when shortlist non-empty and daily cap remaining (default off — authorize CLI gates it).
+SUBMIT_AGENT="${SUBMIT_AGENT:-0}"
+# Optional Phase 4 event slices (default off — event-triggered, not 10 concurrent frontiers).
+OUTREACH_DRAFTS="${OUTREACH_DRAFTS:-0}"
+LEARNING_BATCH="${LEARNING_BATCH:-0}"
+STATE_FILE="$ROOT/handoff-state.json"
+REPORT_FILE="$ROOT/last-run-report.md"
+VALIDATOR="$ROOT/lib/validate_handoff_state.py"
+MERGER="$ROOT/lib/merge_shards.py"
+EXCLUSION_BUILDER="$ROOT/lib/build_exclusion_index.py"
+RUN_CONTEXT="$ROOT/lib/run_context.py"
+LEDGER="$ROOT/lib/ledger.py"
+VERIFY="$ROOT/lib/verify_jobs.py"
+RANK="$ROOT/lib/rank_opportunities.py"
+AUTHORIZE="$ROOT/lib/submission_authorize.py"
+INBOX="$ROOT/lib/inbox_outcomes.py"
+SHEETS_SYNC="$ROOT/lib/sheets_sync.py"
+DRIVE_ART="$ROOT/lib/drive_artifacts.py"
+RUN_REPORT="$ROOT/lib/run_report.py"
+LEARNING="$ROOT/lib/learning_proposals.py"
+OUTREACH="$ROOT/lib/outreach_drafts.py"
+MANIFEST="$ROOT/workers/manifest.json"
+WORKER_PROMPT="$ROOT/agents/discovery-worker.md"
+FRONTIER_PROMPT="$ROOT/agents/frontier-rank-report.md"
+FRONTIER_SUBMIT_PROMPT="$ROOT/agents/frontier-submit.md"
+FRONTIER_COMPAT="$ROOT/agents/frontier.md"
+VERIFY_PROMPT="$ROOT/agents/verification.md"
+OUTREACH_PROMPT="$ROOT/agents/outreach-draft.md"
+WORKSPACE_KEY="cursor-job-automations"
+LEDGER_DB="${JOBOPS_DB:-$ROOT/state/jobops.db}"
+# Inbox path for pipeline — NEVER default to test fixtures in live execution.
+# Set PIPELINE_INBOX explicitly (private workspace path or user export).
+PIPELINE_INBOX="${PIPELINE_INBOX:-}"
+
+log() { print -r -- "[harness] $*"; }
+die() { print -r -- "[harness] ERROR: $*" >&2; exit 1; }
+
+require() { command -v "$1" >/dev/null 2>&1 || die "$1 not found"; }
+require python3
+# Provider-neutral runtime detect (Cursor / Claude / Codex / Antigravity / deterministic).
+# Never require a single vendor CLI; never use unrestricted --force/--trust.
+AGENT_RUNTIME_LIB="$ROOT/lib/agent_runtime.py"
+[[ -f "$AGENT_RUNTIME_LIB" ]] || die "missing lib/agent_runtime.py"
+JOBOPS_RUNTIME="${JOBOPS_RUNTIME:-auto}"
+# External side effects OFF by default.
+JOBOPS_ALLOW_SUBMIT="${JOBOPS_ALLOW_SUBMIT:-0}"
+JOBOPS_ENABLE_LIVE_SUBMIT="${JOBOPS_ENABLE_LIVE_SUBMIT:-0}"
+JOBOPS_ENABLE_OUTREACH_SEND="${JOBOPS_ENABLE_OUTREACH_SEND:-0}"
+export JOBOPS_ALLOW_SUBMIT JOBOPS_ENABLE_LIVE_SUBMIT JOBOPS_ENABLE_OUTREACH_SEND JOBOPS_RUNTIME
+if [[ "$JOBOPS_MODE" != "pipeline" ]]; then
+  python3 "$AGENT_RUNTIME_LIB" --detect --runtime "$JOBOPS_RUNTIME" >"$ROOT/state/runtime-detect.json" 2>/dev/null || \
+    python3 "$AGENT_RUNTIME_LIB" --detect >"$ROOT/state/runtime-detect.json" || true
+  SELECTED="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["selected"]["provider"])' "$ROOT/state/runtime-detect.json" 2>/dev/null || print deterministic)"
+  log "agent_runtime selected=$SELECTED (JOBOPS_RUNTIME=$JOBOPS_RUNTIME); submit_allow=$JOBOPS_ALLOW_SUBMIT"
+fi
+
+[[ -f "$ROOT/scheduled-task-prompt.md" ]] || die "missing scheduled-task-prompt.md"
+[[ -f "$MANIFEST" ]] || die "missing workers/manifest.json"
+[[ -f "$WORKER_PROMPT" ]] || die "missing agents/discovery-worker.md"
+[[ -f "$FRONTIER_PROMPT" ]] || die "missing agents/frontier-rank-report.md"
+[[ -f "$FRONTIER_SUBMIT_PROMPT" ]] || die "missing agents/frontier-submit.md"
+[[ -f "$FRONTIER_COMPAT" ]] || die "missing agents/frontier.md"
+[[ -f "$VALIDATOR" && -f "$MERGER" && -f "$EXCLUSION_BUILDER" ]] || die "missing lib scripts"
+[[ -f "$RUN_CONTEXT" && -f "$LEDGER" ]] || die "missing Phase 1 lib scripts (run_context/ledger)"
+[[ -f "$VERIFY" ]] || die "missing lib/verify_jobs.py"
+[[ -f "$RANK" ]] || die "missing lib/rank_opportunities.py"
+[[ -f "$AUTHORIZE" ]] || die "missing lib/submission_authorize.py"
+[[ -f "$INBOX" && -f "$SHEETS_SYNC" && -f "$DRIVE_ART" && -f "$RUN_REPORT" ]] || die "missing Phase 4 lib scripts"
+[[ -f "$LEARNING" && -f "$OUTREACH" ]] || die "missing Phase 4 learning/outreach libs"
+[[ -f "$VERIFY_PROMPT" ]] || die "missing agents/verification.md"
+[[ -f "$OUTREACH_PROMPT" ]] || die "missing agents/outreach-draft.md"
+[[ -f "$ROOT/lib/build_worker_prompts.py" ]] || die "missing lib/build_worker_prompts.py"
+
+# HTTP-parallel mode does not need Chrome; only warn (don't hard-fail) on job-mac worker.
+if pgrep -fl "cursor-agent-worker" 2>/dev/null | grep -F "$WORKSPACE_KEY" >/dev/null 2>&1; then
+  log "NOTE: cursor-agent-worker for $WORKSPACE_KEY is running — HTTP workers should still be fine."
+fi
+
+RUN_STAMP="$(TZ=Asia/Kolkata date '+%Y%m%d-%H%M')"
+RUN_ID="${RUN_STAMP}IST"
+RUN_DIR="$ROOT/runs/$RUN_ID"
+SHARDS_DIR="$RUN_DIR/shards"
+mkdir -p "$SHARDS_DIR" "$RUN_DIR" "$ROOT/state"
+: > "$RUN_DIR/harness.log"
+
+PARALLEL="$(python3 -c 'import json,sys; print("1" if json.load(open(sys.argv[1])).get("parallel") else "0")' "$MANIFEST")"
+MODE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("mode","http"))' "$MANIFEST")"
+WORKER_COUNT="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["workers"]))' "$MANIFEST")"
+
+log "run_id=$RUN_ID floor=$FLOOR jobops_mode=$JOBOPS_MODE mode=$MODE parallel=$PARALLEL workers=$WORKER_COUNT"
+log "run_dir=$RUN_DIR ledger_db=$LEDGER_DB"
+
+# Stale report from a prior run must not satisfy this run's gates (full mode only).
+if [[ "$JOBOPS_MODE" != "pipeline" && -f "$REPORT_FILE" ]]; then
+  mv "$REPORT_FILE" "$RUN_DIR/last-run-report.prev.md" 2>/dev/null || rm -f "$REPORT_FILE"
+  log "archived prior last-run-report.md"
+fi
+
+# --- 0) F01 Context lite (run row + lock; session inventory) ---
+log "context preflight…"
+CONTEXT_ARGS=(--run-id "$RUN_ID" --run-dir "$RUN_DIR" --floor "$FLOOR" --db "$LEDGER_DB")
+if [[ -n "${JOBOPS_HOME:-}" ]]; then
+  CONTEXT_ARGS+=(--workspace "$JOBOPS_HOME")
+fi
+python3 "$RUN_CONTEXT" "${CONTEXT_ARGS[@]}" | tee "$RUN_DIR/run-context.summary.json"
+
+# ---------------------------------------------------------------------------
+# Phase 4 pipeline-only path: skip discovery; inbox → ledger → report → sync
+# ---------------------------------------------------------------------------
+if [[ "$JOBOPS_MODE" == "pipeline" ]]; then
+  log "JOBOPS_MODE=pipeline — skipping discovery/verify/rank/frontier"
+  if [[ -z "$PIPELINE_INBOX" ]]; then
+    die "pipeline mode requires PIPELINE_INBOX=... (test fixtures are not live defaults)"
+  fi
+  if [[ ! -f "$PIPELINE_INBOX" ]]; then
+    die "pipeline inbox missing: $PIPELINE_INBOX"
+  fi
+  case "$PIPELINE_INBOX" in
+    */evals/fixtures/*)
+      die "refusing test-fixture inbox for live pipeline: $PIPELINE_INBOX (use a private workspace export)"
+      ;;
+  esac
+  log "P01 inbox outcomes from $PIPELINE_INBOX…"
+  python3 "$INBOX" \
+    --inbox "$PIPELINE_INBOX" \
+    --run-id "$RUN_ID" \
+    --db "$LEDGER_DB" \
+    --out "$RUN_DIR/pipeline-outcomes.json" | tee "$RUN_DIR/pipeline-outcomes.summary.json"
+  python3 "$LEDGER" --db "$LEDGER_DB" mark-task \
+    --run-id "$RUN_ID" \
+    --task-id "$RUN_ID:pipeline" \
+    --stage pipeline \
+    --status complete \
+    --finished >/dev/null
+  python3 "$LEDGER" --db "$LEDGER_DB" set-phase --run-id "$RUN_ID" --phase pipeline >/dev/null
+
+  # Minimal report for pipeline-only runs
+  {
+    print -- "# Job-Apply pipeline report — $RUN_ID"
+    print -- ""
+    print -- "Mode: pipeline-only (discovery skipped). Cap remains 1."
+    print -- ""
+    print -- "Inbox outcomes processed from \`$PIPELINE_INBOX\`."
+    print -- ""
+    print -- "no quota was promised, and no unverified submission was recorded"
+  } > "$REPORT_FILE"
+  cp "$REPORT_FILE" "$RUN_DIR/last-run-report.md"
+
+  log "R03/R04 report enrich…"
+  python3 "$RUN_REPORT" \
+    --run-id "$RUN_ID" \
+    --run-dir "$RUN_DIR" \
+    --report "$REPORT_FILE" \
+    --eligible-count 0 \
+    --db "$LEDGER_DB" | tee "$RUN_DIR/run-report.json"
+
+  log "R01 sheets sync plan (offline)…"
+  python3 "$SHEETS_SYNC" \
+    --db "$LEDGER_DB" \
+    --out "$RUN_DIR/sheets-sync-plan.json" | tee "$RUN_DIR/sheets-sync.json"
+
+  log "R02 drive folder ensure…"
+  python3 -c '
+import json,sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[1]) / "lib"))
+from drive_artifacts import ensure_batch
+from ledger import Ledger
+root, db, out, drive_root = sys.argv[1:5]
+led = Ledger(db)
+rows = led._conn.execute(
+  "SELECT job_key, organization, role, status, canonical_url FROM jobs"
+).fetchall()
+jobs = [dict(r) for r in rows]
+led.close()
+summary = ensure_batch(jobs, root=Path(drive_root))
+Path(out).write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+print(json.dumps({"ok": True, "folders": summary["count"]}))
+' "$ROOT" "$LEDGER_DB" "$RUN_DIR/drive-folders.json" "$RUN_DIR/drive-mirror"
+
+  if [[ "$LEARNING_BATCH" == "1" ]]; then
+    log "F08 learning batch (proposal-only)…"
+    python3 "$LEARNING" \
+      --run-id "$RUN_ID" \
+      --db "$LEDGER_DB" \
+      --out "$RUN_DIR/learning-batch.json" | tee "$RUN_DIR/learning-batch.summary.json"
+  fi
+
+  log "ledger finalize (pipeline)…"
+  python3 "$LEDGER" --db "$LEDGER_DB" finalize \
+    --run-id "$RUN_ID" \
+    --status complete \
+    --eligible-count 0 | tee "$RUN_DIR/ledger-finalize.json"
+  log "ACCEPT pipeline complete. artifacts: $RUN_DIR"
+  exit 0
+fi
+
+# --- 1) Exclusion index ---
+EXCLUSION_FILE="$RUN_DIR/exclusion-index.json"
+python3 "$EXCLUSION_BUILDER" "$ROOT/_sheet_exports" "$EXCLUSION_FILE" | tee -a "$RUN_DIR/harness.log"
+cp "$EXCLUSION_FILE" "$ROOT/exclusion-index.json" 2>/dev/null || true
+python3 "$LEDGER" --db "$LEDGER_DB" mark-task \
+  --run-id "$RUN_ID" \
+  --task-id "$RUN_ID:exclusion" \
+  --stage exclusion \
+  --status complete \
+  --finished >/dev/null
+python3 "$LEDGER" --db "$LEDGER_DB" set-phase --run-id "$RUN_ID" --phase exclusion >/dev/null
+
+# Reconcile exclusion counts into run-context if present (best-effort).
+if [[ -f "$RUN_DIR/run-context.json" ]]; then
+  python3 -c '
+import json,sys
+from pathlib import Path
+ctx_path, excl_path = Path(sys.argv[1]), Path(sys.argv[2])
+ctx = json.loads(ctx_path.read_text(encoding="utf-8"))
+excl = json.loads(excl_path.read_text(encoding="utf-8"))
+ctx.setdefault("exclusion", {})
+ctx["exclusion"]["canonical_url_count"] = int(excl.get("count") or len(excl.get("canonical_urls") or []))
+ctx["exclusion"]["path"] = str(excl_path)
+ctx_path.write_text(json.dumps(ctx, indent=2) + "\n", encoding="utf-8")
+' "$RUN_DIR/run-context.json" "$EXCLUSION_FILE"
+fi
+
+# --- helpers ---
+# Map harness labels → AgentRuntime roles (least-privilege scopes).
+role_for_label() {
+  case "$1" in
+    worker:*) print discovery ;;
+    verification) print verification ;;
+    frontier-rank-report|frontier-finish) print frontier_rank ;;
+    frontier-submit) print frontier_submit ;;
+    outreach*) print outreach ;;
+    *) print discovery ;;
+  esac
+}
+
+run_agent() {
+  local label="$1"
+  local prompt_file="$2"
+  local log_out="$3"
+  local timeout_sec="${4:-0}"
+  local role
+  role="$(role_for_label "$label")"
+  log "agent:$label role=$role runtime=$JOBOPS_RUNTIME starting…"
+  set +e
+  # Provider-neutral invoke — refuses --force/--trust; enforces role tool scopes.
+  python3 "$AGENT_RUNTIME_LIB" \
+    --runtime "$JOBOPS_RUNTIME" \
+    --invoke-role "$role" \
+    --prompt "$prompt_file" \
+    --workspace "$ROOT" \
+    --log "$log_out" \
+    --timeout "$timeout_sec"
+  local rc=$?
+  set -e
+  grep -E 'SHARD_OK|ERROR|TIMEOUT|floor_met|no quota was promised|forbidden|blocked' "$log_out" 2>/dev/null | tail -5 || true
+  log "agent:$label exited rc=$rc"
+  return "$rc"
+}
+
+write_stub_shard() {
+  # Failed / timed-out / missing shard ≠ honest source exhaustion.
+  local shard_id="$1"
+  local wrc="$2"
+  local reason="${3:-worker_failed}"
+  python3 -c '
+import json,sys
+from pathlib import Path
+shard_id, run_id, path, wrc, reason = sys.argv[1:6]
+timed_out = reason == "timeout" or str(wrc) == "124"
+Path(path).write_text(json.dumps({
+  "shard_id": shard_id,
+  "run_id": run_id,
+  "lane": 0,
+  "lane_name": "unknown",
+  "country": "unknown",
+  "mode": "http",
+  "exhausted": False,
+  "worker_status": "timeout" if timed_out else "failed",
+  "sources_tried": [],
+  "sources_blocked": [{"source": "worker", "reason": reason, "worker_rc": int(wrc) if str(wrc).lstrip("-").isdigit() else wrc}],
+  "sources_remaining_readable": ["unknown_after_worker_failure"],
+  "matches": [],
+  "notes": f"harness stub: worker {reason} rc={wrc}; NOT source exhaustion"
+}, indent=2) + "\n", encoding="utf-8")
+' "$shard_id" "$RUN_ID" "$SHARDS_DIR/$shard_id.json" "$wrc" "$reason"
+}
+
+# --- 2) Build prompts + dispatch workers ---
+python3 "$ROOT/lib/build_worker_prompts.py" \
+  --manifest "$MANIFEST" \
+  --worker-template "$WORKER_PROMPT" \
+  --run-dir "$RUN_DIR" \
+  --shards-dir "$SHARDS_DIR" \
+  --run-id "$RUN_ID" \
+  --exclusion "$EXCLUSION_FILE"
+
+typeset -a PROMPTS SHARD_IDS
+PROMPTS=("$RUN_DIR"/prompt-worker-*.md)
+if (( ${#PROMPTS[@]} == 0 )); then
+  die "no worker prompts generated"
+fi
+
+if [[ "$PARALLEL" == "1" ]]; then
+  log "dispatching ${#PROMPTS[@]} HTTP workers in parallel"
+  typeset -a PIDS
+  PIDS=()
+  for prompt in "${PROMPTS[@]}"; do
+    shard_id="${prompt:t}"
+    shard_id="${shard_id#prompt-worker-}"
+    shard_id="${shard_id%.md}"
+    SHARD_IDS+=("$shard_id")
+    (
+      set +e
+      run_agent "worker:$shard_id" "$prompt" "$RUN_DIR/agent-worker-$shard_id.log" "$WORKER_TIMEOUT_SEC"
+      echo $? >"$RUN_DIR/worker-$shard_id.rc"
+    ) &
+    PIDS+=($!)
+    log "spawned worker:$shard_id pid=${PIDS[-1]} timeout=${WORKER_TIMEOUT_SEC}s"
+  done
+  for pid in "${PIDS[@]}"; do
+    wait "$pid" || true
+  done
+  for shard_id in "${SHARD_IDS[@]}"; do
+    wrc=1
+    [[ -f "$RUN_DIR/worker-$shard_id.rc" ]] && wrc="$(cat "$RUN_DIR/worker-$shard_id.rc")"
+    if [[ ! -f "$SHARDS_DIR/$shard_id.json" ]]; then
+      reason="worker_failed"
+      [[ "$wrc" == "124" ]] && reason="timeout"
+      log "worker $shard_id missing shard — stubbing as $reason (NOT exhausted)"
+      write_stub_shard "$shard_id" "$wrc" "$reason"
+    else
+      # Never rewrite a worker's exhausted flag on timeout after partial write — verify status.
+      python3 -c '
+import json,sys
+from pathlib import Path
+path, shard_id, wrc = sys.argv[1:4]
+d=json.load(open(path))
+if str(wrc)=="124":
+    d["exhausted"]=False
+    d["worker_status"]="timeout"
+    d.setdefault("sources_remaining_readable", ["unknown_after_timeout"])
+    d["notes"]=(d.get("notes") or "") + " | harness: timeout is not source exhaustion"
+    Path(path).write_text(json.dumps(d, indent=2)+"\n", encoding="utf-8")
+print(shard_id, "matches", len(d.get("matches") or []), "exhausted", d.get("exhausted"), "worker_status", d.get("worker_status"))
+' "$SHARDS_DIR/$shard_id.json" "$shard_id" "$wrc"
+    fi
+  done
+else
+  log "dispatching ${#PROMPTS[@]} workers sequentially"
+  for prompt in "${PROMPTS[@]}"; do
+    shard_id="${prompt:t}"
+    shard_id="${shard_id#prompt-worker-}"
+    shard_id="${shard_id%.md}"
+    set +e
+    run_agent "worker:$shard_id" "$prompt" "$RUN_DIR/agent-worker-$shard_id.log" "$WORKER_TIMEOUT_SEC"
+    wrc=$?
+    set -e
+    if [[ ! -f "$SHARDS_DIR/$shard_id.json" ]]; then
+      reason="worker_failed"
+      [[ "$wrc" == "124" ]] && reason="timeout"
+      write_stub_shard "$shard_id" "$wrc" "$reason"
+    fi
+  done
+fi
+
+# Ledger: ingest worker shards as discovered_job artifacts
+log "ledger ingest shards…"
+python3 "$LEDGER" --db "$LEDGER_DB" ingest-shards \
+  --run-id "$RUN_ID" \
+  --shards-dir "$SHARDS_DIR" | tee "$RUN_DIR/ledger-shards.json"
+python3 "$LEDGER" --db "$LEDGER_DB" mark-task \
+  --run-id "$RUN_ID" \
+  --task-id "$RUN_ID:workers" \
+  --stage workers \
+  --status complete \
+  --finished >/dev/null
+
+# --- 3) Merge (still writes handoff-state.json for backward compatibility) ---
+log "merging shards…"
+python3 "$MERGER" \
+  --shards-dir "$SHARDS_DIR" \
+  --out "$STATE_FILE" \
+  --run-id "$RUN_ID" \
+  --floor "$FLOOR" \
+  --exclusion "$EXCLUSION_FILE" | tee "$RUN_DIR/merge-summary.json"
+cp "$STATE_FILE" "$RUN_DIR/handoff-state.after-merge.json"
+
+# Attach eligible_count without changing merge_shards.py (Phase 0 owns that file).
+python3 -c '
+import json,sys
+from pathlib import Path
+path = Path(sys.argv[1])
+summary_path = Path(sys.argv[2])
+state = json.loads(path.read_text(encoding="utf-8"))
+matches = state.get("matches") or []
+eligible = sum(1 for m in matches if isinstance(m, dict) and str(m.get("status","")).strip().lower()=="eligible")
+state["eligible_count"] = eligible
+path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+if summary_path.is_file():
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["eligible_count"] = eligible
+    summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+print(json.dumps({"eligible_count": eligible, "matches": len(matches)}))
+' "$STATE_FILE" "$RUN_DIR/merge-summary.json" | tee "$RUN_DIR/eligible-count.json"
+
+python3 "$LEDGER" --db "$LEDGER_DB" ingest-handoff \
+  --run-id "$RUN_ID" \
+  --state "$STATE_FILE" | tee "$RUN_DIR/ledger-merge.json"
+python3 "$LEDGER" --db "$LEDGER_DB" mark-task \
+  --run-id "$RUN_ID" \
+  --task-id "$RUN_ID:merge" \
+  --stage merge \
+  --status complete \
+  --finished >/dev/null
+
+# --- 3b) Verify (Phase 2: V01–V04) — after merge, before frontier ---
+# merge → verify → frontier
+log "verify stage (lib/verify_jobs.py)…"
+VERIFY_OUT="$RUN_DIR/verify-summary.json"
+AMBIGUOUS_OUT="$RUN_DIR/verify-ambiguous.json"
+AGENT_DECISIONS_FILE="$RUN_DIR/verify-agent-decisions.json"
+python3 "$VERIFY" \
+  --state "$STATE_FILE" \
+  --run-id "$RUN_ID" \
+  --exclusion "$EXCLUSION_FILE" \
+  --db "$LEDGER_DB" \
+  --out "$VERIFY_OUT" \
+  --ambiguous-out "$AMBIGUOUS_OUT" \
+  --prior-keys-mode ledger | tee "$RUN_DIR/verify.json"
+cp "$STATE_FILE" "$RUN_DIR/handoff-state.after-verify.json"
+
+# Optional thin agent for ambiguous sponsorship quote extraction only.
+AMBIGUOUS_COUNT="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1])).get("ambiguous") or []))' "$AMBIGUOUS_OUT" 2>/dev/null || print 0)"
+if [[ "$VERIFY_AGENT" == "1" && "$AMBIGUOUS_COUNT" != "0" ]]; then
+  log "verify agent for $AMBIGUOUS_COUNT ambiguous sponsorship item(s)…"
+  VERIFY_AGENT_PROMPT_FILE="$RUN_DIR/prompt-verification.md"
+  {
+    print -- "# Verification agent runtime"
+    print -- "RUN_ID=$RUN_ID"
+    print -- "AGENT_DECISIONS_OUT=$AGENT_DECISIONS_FILE"
+    print -- "Read ambiguous queue: $AMBIGUOUS_OUT"
+    print -- "Read handoff-state.json at $STATE_FILE"
+    print -- "Output JSON EligibilityDecision only — harness rejects free text."
+    print -- ""
+    cat "$VERIFY_PROMPT"
+  } > "$VERIFY_AGENT_PROMPT_FILE"
+  set +e
+  run_agent "verification" "$VERIFY_AGENT_PROMPT_FILE" "$RUN_DIR/agent-verification.log"
+  vrc=$?
+  set -e
+  if [[ $vrc -eq 0 && -f "$AGENT_DECISIONS_FILE" ]]; then
+    log "re-verify with agent EligibilityDecision(s)…"
+    python3 "$VERIFY" \
+      --state "$STATE_FILE" \
+      --run-id "$RUN_ID" \
+      --exclusion "$EXCLUSION_FILE" \
+      --db "$LEDGER_DB" \
+      --out "$VERIFY_OUT" \
+      --ambiguous-out "$AMBIGUOUS_OUT" \
+      --agent-decisions "$AGENT_DECISIONS_FILE" \
+      --prior-keys-mode ledger | tee "$RUN_DIR/verify-after-agent.json"
+    cp "$STATE_FILE" "$RUN_DIR/handoff-state.after-verify.json"
+  else
+    log "verify agent skipped or produced no JSON (keeping deterministic Needs review)"
+  fi
+else
+  log "verify agent not invoked (VERIFY_AGENT=$VERIFY_AGENT ambiguous=$AMBIGUOUS_COUNT)"
+fi
+
+# Refresh eligible_count after verify enrichment.
+python3 -c '
+import json,sys
+from pathlib import Path
+path = Path(sys.argv[1])
+state = json.loads(path.read_text(encoding="utf-8"))
+matches = state.get("matches") or []
+eligible = sum(1 for m in matches if isinstance(m, dict) and str(m.get("status","")).strip().lower()=="eligible")
+state["eligible_count"] = eligible
+path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+print(json.dumps({"eligible_count": eligible, "matches": len(matches)}))
+' "$STATE_FILE" | tee "$RUN_DIR/eligible-count-after-verify.json"
+
+# --- 3c) Rank (Phase 3: I01–I04) — after verify, before frontier ---
+# verify → rank → frontier
+log "rank stage (lib/rank_opportunities.py)…"
+RANKED_OUT="$RUN_DIR/ranked-shortlist.json"
+python3 "$RANK" \
+  --state "$STATE_FILE" \
+  --run-id "$RUN_ID" \
+  --out "$RANKED_OUT" \
+  --db "$LEDGER_DB" | tee "$RUN_DIR/rank.json"
+cp "$STATE_FILE" "$RUN_DIR/handoff-state.after-rank.json"
+SHORTLIST_COUNT="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1])).get("shortlist") or []))' "$RANKED_OUT" 2>/dev/null || print 0)"
+log "ranked shortlist_count=$SHORTLIST_COUNT"
+
+# --- 4) Frontier rank-report (default every run) ---
+FRONTIER_PROMPT_FILE="$RUN_DIR/prompt-frontier.md"
+{
+  print -- "# Frontier rank-report runtime"
+  print -- "RUN_ID=$RUN_ID"
+  print -- "FLOOR=$FLOOR"
+  print -- "MODE=fast-http-workers"
+  print -- "Read handoff-state.json at $STATE_FILE (statuses already verified + ranked — do not re-crawl boards for eligibility)"
+  print -- "Read ranked-shortlist.json at $RANKED_OUT"
+  print -- "Read run-context.json at $RUN_DIR/run-context.json"
+  print -- "Read verify-summary.json at $VERIFY_OUT if present"
+  print -- "Shards dir: $SHARDS_DIR"
+  print -- "Report first. Expand only via HTTP frontier-expand.json if floor unmet."
+  print -- "Do NOT browser-submit on this path. Daily submit cap remains 1."
+  print -- ""
+  cat "$FRONTIER_PROMPT"
+  print -- ""
+  print -- "# Scheduled task rules (eligibility/submit authority)"
+  cat "$ROOT/scheduled-task-prompt.md"
+} > "$FRONTIER_PROMPT_FILE"
+
+set +e
+run_agent "frontier-rank-report" "$FRONTIER_PROMPT_FILE" "$RUN_DIR/agent-frontier.log"
+frc=$?
+set -e
+
+if [[ -f "$SHARDS_DIR/frontier-expand.json" ]]; then
+  log "frontier-expand detected — re-merging + re-verify + re-rank"
+  python3 "$MERGER" \
+    --shards-dir "$SHARDS_DIR" \
+    --out "$STATE_FILE" \
+    --run-id "$RUN_ID" \
+    --floor "$FLOOR" \
+    --exclusion "$EXCLUSION_FILE" | tee "$RUN_DIR/merge-summary-2.json"
+  python3 -c '
+import json,sys
+from pathlib import Path
+path = Path(sys.argv[1])
+state = json.loads(path.read_text(encoding="utf-8"))
+matches = state.get("matches") or []
+state["eligible_count"] = sum(1 for m in matches if isinstance(m, dict) and str(m.get("status","")).strip().lower()=="eligible")
+path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+' "$STATE_FILE"
+  cp "$STATE_FILE" "$RUN_DIR/handoff-state.after-expand.json"
+  python3 "$LEDGER" --db "$LEDGER_DB" ingest-handoff \
+    --run-id "$RUN_ID" \
+    --state "$STATE_FILE" | tee "$RUN_DIR/ledger-merge-2.json"
+  # Re-verify + re-rank after expand so frontier finish consumes fresh shortlist.
+  python3 "$VERIFY" \
+    --state "$STATE_FILE" \
+    --run-id "$RUN_ID" \
+    --exclusion "$EXCLUSION_FILE" \
+    --db "$LEDGER_DB" \
+    --out "$VERIFY_OUT" \
+    --ambiguous-out "$AMBIGUOUS_OUT" \
+    --prior-keys-mode ledger | tee "$RUN_DIR/verify-after-expand.json" || true
+  python3 "$RANK" \
+    --state "$STATE_FILE" \
+    --run-id "$RUN_ID" \
+    --out "$RANKED_OUT" \
+    --db "$LEDGER_DB" | tee "$RUN_DIR/rank-after-expand.json" || true
+  SHORTLIST_COUNT="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1])).get("shortlist") or []))' "$RANKED_OUT" 2>/dev/null || print 0)"
+fi
+
+# Always finish report after expand (or if first frontier pass stopped early).
+report_ok=0
+if [[ -f "$REPORT_FILE" ]] && grep -Fq "$RUN_ID" "$REPORT_FILE" && grep -Fq "no quota was promised" "$REPORT_FILE"; then
+  report_ok=1
+fi
+if (( report_ok == 0 )); then
+  log "frontier finish pass (report for $RUN_ID required)"
+  set +e
+  run_agent "frontier-finish" "$FRONTIER_PROMPT_FILE" "$RUN_DIR/agent-frontier-finish.log"
+  frc=$?
+  set -e
+fi
+
+python3 "$LEDGER" --db "$LEDGER_DB" mark-task \
+  --run-id "$RUN_ID" \
+  --task-id "$RUN_ID:frontier" \
+  --stage frontier \
+  --status complete \
+  --finished >/dev/null
+
+# --- 4b) Optional frontier-submit (gated by authorize check-only) ---
+# Invoke only when SUBMIT_AGENT=1 AND shortlist non-empty AND daily cap remaining.
+ALLOW_SUBMIT=0
+set +e
+python3 "$AUTHORIZE" \
+  --check-only \
+  --shortlist "$RANKED_OUT" \
+  --run-id "$RUN_ID" \
+  --db "$LEDGER_DB" >"$RUN_DIR/authorize-check.json"
+arc=$?
+set -e
+if [[ "$SUBMIT_AGENT" == "1" && "$JOBOPS_ALLOW_SUBMIT" == "1" && "$JOBOPS_ENABLE_LIVE_SUBMIT" == "1" && $arc -eq 0 ]]; then
+  ALLOW_SUBMIT=1
+fi
+log "submit gate: SUBMIT_AGENT=$SUBMIT_AGENT allow_submit=$JOBOPS_ALLOW_SUBMIT live=$JOBOPS_ENABLE_LIVE_SUBMIT authorize_rc=$arc allow=$ALLOW_SUBMIT shortlist=$SHORTLIST_COUNT"
+if (( ALLOW_SUBMIT == 1 )); then
+  FRONTIER_SUBMIT_PROMPT_FILE="$RUN_DIR/prompt-frontier-submit.md"
+  {
+    print -- "# Frontier submit runtime (authorize-gated)"
+    print -- "RUN_ID=$RUN_ID"
+    print -- "RANKED_SHORTLIST=$RANKED_OUT"
+    print -- "AUTHORIZE_CHECK=$RUN_DIR/authorize-check.json"
+    print -- "Daily submit cap remains 1. Never auto-retry after SubmissionUncertain."
+    print -- "Run lib/submission_authorize.py before any browser submit."
+    print -- ""
+    cat "$FRONTIER_SUBMIT_PROMPT"
+    print -- ""
+    print -- "# Scheduled task rules (eligibility/submit authority)"
+    cat "$ROOT/scheduled-task-prompt.md"
+  } > "$FRONTIER_SUBMIT_PROMPT_FILE"
+  set +e
+  run_agent "frontier-submit" "$FRONTIER_SUBMIT_PROMPT_FILE" "$RUN_DIR/agent-frontier-submit.log"
+  src=$?
+  set -e
+  log "frontier-submit exited rc=$src"
+  python3 "$LEDGER" --db "$LEDGER_DB" mark-task \
+    --run-id "$RUN_ID" \
+    --task-id "$RUN_ID:frontier-submit" \
+    --stage frontier_submit \
+    --status complete \
+    --finished >/dev/null
+else
+  log "frontier-submit skipped (set SUBMIT_AGENT=1 when shortlist+cap allow)"
+fi
+
+# --- 5) Validate ---
+log "validating handoff-state.json (floor=$FLOOR)"
+set +e
+VAL_OUT="$(python3 "$VALIDATOR" "$STATE_FILE" "$FLOOR" 2>"$RUN_DIR/validate.err")"
+vrc=$?
+set -e
+print -r -- "$VAL_OUT" | tee "$RUN_DIR/validate.json"
+if (( vrc != 0 )); then
+  cat "$RUN_DIR/validate.err" >&2 || true
+  python3 "$LEDGER" --db "$LEDGER_DB" finalize \
+    --run-id "$RUN_ID" \
+    --status failed \
+    --validate-json "$RUN_DIR/validate.json" >/dev/null || true
+  die "handoff-state.json failed validation"
+fi
+
+DECISION="$(print -r -- "$VAL_OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["decision"])')"
+CUMULATIVE="$(print -r -- "$VAL_OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["cumulative_handoff_matches"])')"
+ELIGIBLE="$(print -r -- "$VAL_OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("eligible_count",0))')"
+log "decision=$DECISION cumulative=$CUMULATIVE eligible=$ELIGIBLE frontier_rc=$frc floor=$FLOOR"
+
+if [[ "$DECISION" == "CONTINUE" ]]; then
+  python3 "$LEDGER" --db "$LEDGER_DB" finalize \
+    --run-id "$RUN_ID" \
+    --status continue \
+    --validate-json "$RUN_DIR/validate.json" \
+    --eligible-count "$ELIGIBLE" >/dev/null || true
+  die "floor unmet with sources remaining (cumulative=$CUMULATIVE floor=$FLOOR). See $RUN_DIR"
+fi
+
+if [[ ! -f "$REPORT_FILE" ]]; then
+  die "missing last-run-report.md (frontier must write it)"
+fi
+grep -Fq "$RUN_ID" "$REPORT_FILE" || die "report must mention this run_id=$RUN_ID"
+grep -q "no quota was promised" "$REPORT_FILE" || die "report missing required closing sentence"
+grep -Eqi "handoff|floor|[0-9]+" "$REPORT_FILE" || die "report must mention handoff/floor counts"
+
+cp "$REPORT_FILE" "$RUN_DIR/last-run-report.md"
+cp "$STATE_FILE" "$RUN_DIR/handoff-state.final.json"
+
+# --- 5b) Phase 4 R03/R04 report enrich + reliability ---
+log "R03/R04 report enrich…"
+python3 "$RUN_REPORT" \
+  --run-id "$RUN_ID" \
+  --run-dir "$RUN_DIR" \
+  --report "$REPORT_FILE" \
+  --eligible-count "$ELIGIBLE" \
+  --verify "$VERIFY_OUT" \
+  --run-context "$RUN_DIR/run-context.json" \
+  --db "$LEDGER_DB" | tee "$RUN_DIR/run-report.json"
+cp "$REPORT_FILE" "$RUN_DIR/last-run-report.md"
+
+# --- 5c) R01 Sheets sync plan (offline; live Sheets skipped without creds) ---
+log "R01 sheets sync plan…"
+python3 "$SHEETS_SYNC" \
+  --db "$LEDGER_DB" \
+  --out "$RUN_DIR/sheets-sync-plan.json" | tee "$RUN_DIR/sheets-sync.json"
+
+# --- 5d) R02 Drive folder ensure (local mirror by job_key) ---
+log "R02 drive folder ensure…"
+python3 -c '
+import json,sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[1]) / "lib"))
+from drive_artifacts import ensure_batch
+state = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+jobs = []
+for m in state.get("matches") or []:
+    if not isinstance(m, dict):
+        continue
+    jobs.append({
+        "job_key": m.get("job_key") or "",
+        "organization": m.get("organization") or "",
+        "role": m.get("role") or "",
+        "status": m.get("status") or "",
+        "canonical_url": m.get("canonical_url") or "",
+    })
+summary = ensure_batch([j for j in jobs if j["job_key"]], root=Path(sys.argv[3]))
+Path(sys.argv[4]).write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+print(json.dumps({"ok": True, "folders": summary["count"]}))
+' "$ROOT" "$STATE_FILE" "$RUN_DIR/drive-mirror" "$RUN_DIR/drive-folders.json" | tee "$RUN_DIR/drive-folders.summary.json"
+
+# --- 5e) Optional end-of-run inbox skim (only when PIPELINE_INBOX explicitly set) ---
+if [[ -n "${PIPELINE_INBOX}" && -f "$PIPELINE_INBOX" ]]; then
+  log "P01 end-of-run inbox skim…"
+  python3 "$INBOX" \
+    --inbox "$PIPELINE_INBOX" \
+    --run-id "$RUN_ID" \
+    --db "$LEDGER_DB" \
+    --out "$RUN_DIR/pipeline-outcomes.json" | tee "$RUN_DIR/pipeline-outcomes.summary.json" || true
+  python3 "$LEDGER" --db "$LEDGER_DB" mark-task \
+    --run-id "$RUN_ID" \
+    --task-id "$RUN_ID:pipeline" \
+    --stage pipeline \
+    --status complete \
+    --finished >/dev/null || true
+fi
+
+# --- 5f) Optional outreach drafts (OUTREACH_DRAFTS=1; never auto-send) ---
+if [[ "$OUTREACH_DRAFTS" == "1" && -f "$RUN_DIR/outreach-candidates.json" ]]; then
+  log "F06 outreach drafts (draft-only)…"
+  python3 "$OUTREACH" \
+    --candidates "$RUN_DIR/outreach-candidates.json" \
+    --run-id "$RUN_ID" \
+    --db "$LEDGER_DB" \
+    --out "$RUN_DIR/outreach-drafts.json" | tee "$RUN_DIR/outreach-drafts.summary.json"
+fi
+
+# --- 5g) Optional weekly learning batch (LEARNING_BATCH=1; never mutates policy) ---
+if [[ "$LEARNING_BATCH" == "1" ]]; then
+  log "F08 learning batch (proposal-only)…"
+  python3 "$LEARNING" \
+    --run-id "$RUN_ID" \
+    --db "$LEDGER_DB" \
+    --out "$RUN_DIR/learning-batch.json" | tee "$RUN_DIR/learning-batch.summary.json"
+fi
+
+# --- 6) Ledger finalize ---
+log "ledger finalize…"
+python3 "$LEDGER" --db "$LEDGER_DB" finalize \
+  --run-id "$RUN_ID" \
+  --status complete \
+  --validate-json "$RUN_DIR/validate.json" \
+  --eligible-count "$ELIGIBLE" | tee "$RUN_DIR/ledger-finalize.json"
+
+log "ACCEPT complete. artifacts: $RUN_DIR"
+exit 0

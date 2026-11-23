@@ -1,0 +1,18 @@
+{
+  "canonical_url": "https://jobs.ashbyhq.com/dryft/76c36c29-47bc-4c39-8e39-799a40881ac4",
+  "employer_or_ats_url": "https://jobs.ashbyhq.com/dryft/76c36c29-47bc-4c39-8e39-799a40881ac4",
+  "organization": "Dryft",
+  "role": "Forward Deployed Engineer - Germany",
+  "status": "Eligible",
+  "lane": 1,
+  "country": "Germany",
+  "source": "Ashby",
+  "reason": "Attempted Eligible despite native-level German required",
+  "posting_text": "Native-level German required for customer workshops. German C1 mandatory.",
+  "sponsorship_quote": "We offer visa sponsorship for qualified candidates.",
+  "evidence_refs": [
+    "https://jobs.ashbyhq.com/dryft/76c36c29-47bc-4c39-8e39-799a40881ac4"
+  ],
+  "expected_decision": "Skipped",
+  "must_not_be_eligible": true
+}

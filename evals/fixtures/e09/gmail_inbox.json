@@ -1,0 +1,57 @@
+{
+  "messages": [
+    {
+      "message_id": "msg-receipt-001",
+      "thread_id": "thr-001",
+      "job_key": "url:https://jobs.ashbyhq.com/acme/uncertain-1",
+      "canonical_url": "https://jobs.ashbyhq.com/acme/uncertain-1",
+      "organization": "Acme",
+      "role": "Forward Deployed Engineer",
+      "from_address": "noreply@ashbyhq.com",
+      "subject": "Application received — Forward Deployed Engineer at Acme",
+      "snippet": "Thank you for applying. We have received your application for Forward Deployed Engineer.",
+      "received_at": "2026-11-23T10:00:00Z",
+      "source": "fixture"
+    },
+    {
+      "message_id": "msg-reject-002",
+      "thread_id": "thr-002",
+      "job_key": "url:https://jobs.ashbyhq.com/beta/uncertain-2",
+      "canonical_url": "https://jobs.ashbyhq.com/beta/uncertain-2",
+      "organization": "Beta Corp",
+      "role": "Frontend Architect",
+      "from_address": "careers@beta.example",
+      "subject": "Update on your application",
+      "snippet": "Unfortunately we will not be moving forward with your application at this time. We decided not to proceed.",
+      "received_at": "2026-11-23T11:00:00Z",
+      "source": "fixture"
+    },
+    {
+      "message_id": "msg-interview-003",
+      "thread_id": "thr-003",
+      "job_key": "url:https://jobs.lever.co/gamma/applied-3",
+      "canonical_url": "https://jobs.lever.co/gamma/applied-3",
+      "organization": "Gamma",
+      "role": "Product Engineer",
+      "from_address": "recruiter@gamma.example",
+      "subject": "Interview invitation — Product Engineer",
+      "snippet": "We would like to schedule a call / phone screen with the hiring manager. Please share availability.",
+      "received_at": "2026-11-23T12:00:00Z",
+      "source": "fixture"
+    },
+    {
+      "message_id": "msg-receipt-001",
+      "thread_id": "thr-001",
+      "job_key": "url:https://jobs.ashbyhq.com/acme/uncertain-1",
+      "canonical_url": "https://jobs.ashbyhq.com/acme/uncertain-1",
+      "organization": "Acme",
+      "role": "Forward Deployed Engineer",
+      "from_address": "noreply@ashbyhq.com",
+      "subject": "Application received — Forward Deployed Engineer at Acme",
+      "snippet": "Thank you for applying. We have received your application for Forward Deployed Engineer.",
+      "received_at": "2026-11-23T10:00:00Z",
+      "source": "fixture",
+      "notes": "duplicate of msg-receipt-001 — must not double-count"
+    }
+  ]
+}

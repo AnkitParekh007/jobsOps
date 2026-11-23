@@ -1,0 +1,70 @@
+{
+  "version": 2,
+  "description": "Fast MVP: target 15/worker, HTTP-only workers run in parallel (no browser). Prefer Greenhouse/Ashby/Lever APIs.",
+  "parallel": true,
+  "mode": "http",
+  "workers": [
+    {
+      "shard_id": "fde-de",
+      "lane": 1,
+      "lane_name": "forward-deployed",
+      "country": "Germany",
+      "mode": "http",
+      "query_titles": [
+        "Forward Deployed Engineer",
+        "Senior Forward Deployed Engineer"
+      ],
+      "sources": [
+        "Greenhouse boards API (boards.greenhouse.io)",
+        "Ashby public job / API pages",
+        "Lever postings JSON/HTML (api.lever.co / jobs.lever.co)",
+        "GermanTechJobs API/HTML",
+        "Arbeitnow public listings",
+        "Berlin Startup Jobs engineering",
+        "WeAreDevelopers public HTML"
+      ],
+      "target_matches": 15
+    },
+    {
+      "shard_id": "frontend-de",
+      "lane": 2,
+      "lane_name": "frontend-architecture",
+      "country": "Germany",
+      "mode": "http",
+      "query_titles": [
+        "Senior Frontend Engineer",
+        "Staff Frontend Engineer",
+        "Lead Frontend Engineer",
+        "Frontend Architect"
+      ],
+      "sources": [
+        "Greenhouse boards API (boards.greenhouse.io)",
+        "Ashby public job / API pages",
+        "Lever postings JSON/HTML (api.lever.co / jobs.lever.co)",
+        "GermanTechJobs",
+        "Arbeitnow",
+        "Berlin Startup Jobs"
+      ],
+      "target_matches": 15
+    },
+    {
+      "shard_id": "fde-ie",
+      "lane": 1,
+      "lane_name": "forward-deployed",
+      "country": "Ireland",
+      "mode": "http",
+      "query_titles": [
+        "Forward Deployed Engineer",
+        "Senior Forward Deployed Engineer"
+      ],
+      "sources": [
+        "Greenhouse boards API (boards.greenhouse.io)",
+        "Ashby public job / API pages",
+        "Lever postings JSON/HTML (api.lever.co / jobs.lever.co)",
+        "IrishJobs public HTML",
+        "company career pages"
+      ],
+      "target_matches": 15
+    }
+  ]
+}

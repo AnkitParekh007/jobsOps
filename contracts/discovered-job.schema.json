@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jobops.local/contracts/discovered-job.schema.json",
+  "title": "DiscoveredJob",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "job_key",
+    "canonical_url",
+    "employer_or_ats_url",
+    "organization",
+    "role",
+    "status",
+    "lane",
+    "country",
+    "source",
+    "reason",
+    "evidence_refs"
+  ],
+  "properties": {
+    "job_key": { "type": "string", "minLength": 1 },
+    "canonical_url": {
+      "type": "string",
+      "pattern": "^https?://"
+    },
+    "employer_or_ats_url": {
+      "type": "string",
+      "pattern": "^https?://"
+    },
+    "organization": { "type": "string" },
+    "role": { "type": "string" },
+    "status": { "type": "string", "minLength": 1 },
+    "lane": { "type": ["integer", "string", "null"] },
+    "country": { "type": "string" },
+    "source": { "type": "string" },
+    "reason": { "type": "string", "minLength": 1 },
+    "evidence_quote": { "type": ["string", "null"] },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "shard_id": { "type": ["string", "null"] }
+  }
+}

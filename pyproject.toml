@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jobops"
+version = "0.1.0"
+description = "Provider-neutral, policy-governed job search operations CLI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "jobsOps contributors" }]
+dependencies = [
+  "jsonschema>=4.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+jobops = "jobops.cli:main"
+
+# Expose lib/*.py as top-level modules (agent_runtime, verify_jobs, ...) AND jobops package.
+[tool.setuptools.package-dir]
+"" = "lib"
+"jobops" = "jobops"
+
+[tool.setuptools]
+py-modules = [
+  "agent_runtime",
+  "agent_sandbox",
+  "approval_controller",
+  "authority",
+  "build_exclusion_index",
+  "build_worker_prompts",
+  "contracts",
+  "drive_artifacts",
+  "evidence_issuer",
+  "inbox_outcomes",
+  "learning_proposals",
+  "ledger",
+  "merge_shards",
+  "mock_ats_portal",
+  "outreach_drafts",
+  "pdf_fixture",
+  "policy",
+  "rank_opportunities",
+  "run_context",
+  "run_report",
+  "sheets_sync",
+  "submission_authorize",
+  "tool_broker",
+  "trust_boundary",
+  "url_safety",
+  "user_workspace",
+  "validate_handoff_state",
+  "verify_jobs",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["jobops*"]
+
+[tool.setuptools.package-data]
+jobops = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["lib", "."]

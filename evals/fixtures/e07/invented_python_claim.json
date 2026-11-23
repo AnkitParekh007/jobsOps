@@ -1,0 +1,20 @@
+{
+  "description": "PDF extract invents Python proficiency — materials gate must fail",
+  "job_key": "url:https://jobs.ashbyhq.com/acme/frontend-invented",
+  "canonical_url": "https://jobs.ashbyhq.com/acme/frontend-invented",
+  "organization": "Acme",
+  "role": "Frontend Engineer",
+  "ats_score": 88,
+  "quality_score": 80,
+  "pdf_fingerprint": "ccc111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "ats_score_fingerprint": "ccc111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "quality_score_fingerprint": "ccc111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "fingerprint_method": "fixture",
+  "extracted_text": "Alex Candidate\nExpert in Python and React\nProfessional Experience",
+  "checklist": {
+    "hard_eligibility_met": true,
+    "filenames_correct": true
+  },
+  "expected_state": "Preparing",
+  "expected_blocking_substring": "invented_claim"
+}

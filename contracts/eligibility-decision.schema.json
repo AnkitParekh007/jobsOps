@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jobops.local/contracts/eligibility-decision.schema.json",
+  "title": "EligibilityDecision",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "job_key",
+    "canonical_url",
+    "decision",
+    "blocking_reasons",
+    "evidence_refs",
+    "policy_version"
+  ],
+  "properties": {
+    "job_key": { "type": "string", "minLength": 1 },
+    "canonical_url": {
+      "type": "string",
+      "pattern": "^https?://"
+    },
+    "decision": {
+      "type": "string",
+      "enum": ["Eligible", "Needs review", "Skipped", "Closed", "Duplicate"]
+    },
+    "blocking_reasons": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "sponsorship_evidence": { "type": ["string", "null"] },
+    "hard_miss": { "type": "boolean" },
+    "policy_version": { "type": "string", "minLength": 1 },
+    "notes": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "decision": { "const": "Eligible" } },
+        "required": ["decision"]
+      },
+      "then": {
+        "properties": {
+          "blocking_reasons": { "maxItems": 0 },
+          "hard_miss": { "const": false }
+        }
+      }
+    }
+  ]
+}

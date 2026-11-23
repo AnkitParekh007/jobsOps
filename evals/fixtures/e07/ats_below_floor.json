@@ -1,0 +1,21 @@
+{
+  "description": "ATS below 80 — must not reach ReadyForApproval / SubmissionAuthorized",
+  "job_key": "url:https://jobs.ashbyhq.com/acme/frontend-low-ats",
+  "canonical_url": "https://jobs.ashbyhq.com/acme/frontend-low-ats",
+  "organization": "Acme",
+  "role": "Frontend Engineer",
+  "ats_score": 72,
+  "quality_score": 80,
+  "pdf_fingerprint": "bbb111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "ats_score_fingerprint": "bbb111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "quality_score_fingerprint": "bbb111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "fingerprint_method": "fixture",
+  "extracted_text": "Alex Candidate\nReact TypeScript\nProfessional Experience",
+  "checklist": {
+    "hard_eligibility_met": true,
+    "filenames_correct": true,
+    "pdf_validated": true
+  },
+  "expected_state": "Preparing",
+  "expected_blocking_substring": "ats_below_floor"
+}

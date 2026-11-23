@@ -1,0 +1,43 @@
+{
+  "description": "Dry-run evidence package to Ready for approval (no live submit)",
+  "job_key": "url:https://jobs.ashbyhq.com/acme/frontend-dryrun",
+  "canonical_url": "https://jobs.ashbyhq.com/acme/frontend-dryrun",
+  "organization": "Acme",
+  "role": "Forward Deployed Engineer",
+  "country": "Germany",
+  "lane": 1,
+  "ats_score": 88,
+  "quality_score": 81,
+  "pdf_fingerprint": "dry111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "ats_score_fingerprint": "dry111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "quality_score_fingerprint": "dry111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "fingerprint_method": "fixture",
+  "extracted_text": "Alex Candidate\nalex.candidate@example.com\nForward Deployed Engineer\nAngular React TypeScript RAG agentic workflows approvals audit\nProfessional Experience\nEducation\nSkills",
+  "checklist": {
+    "posting_open": true,
+    "not_duplicate": true,
+    "hard_eligibility_met": true,
+    "pdf_validated": true,
+    "fingerprint_matches_scores": true,
+    "ats_gate": true,
+    "quality_gate": true,
+    "filenames_correct": true,
+    "required_fields_complete": true,
+    "screening_answers_verified": true,
+    "no_auth_wall": true,
+    "session_authorized_if_needed": true,
+    "form_lock_held": false,
+    "auto_submit_or_user_approved": false,
+    "daily_cap_allows": true
+  },
+  "evidence_package": {
+    "resume_filename": "Alex_Candidate_Resume.pdf",
+    "cover_letter_filename": "Alex_Candidate_Cover_Letter.pdf",
+    "sponsorship_quote": "Visa sponsorship available for this role",
+    "posting_url": "https://jobs.ashbyhq.com/acme/frontend-dryrun",
+    "ats_rubric_version": "ats-40-25-15-10-10",
+    "dry_run": true
+  },
+  "expected_state": "ReadyForApproval",
+  "expected_sop_status": "Ready for approval"
+}
