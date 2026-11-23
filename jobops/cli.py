@@ -421,6 +421,20 @@ def cmd_discover_live(args: argparse.Namespace) -> int:
     return discover_main(argv)
 
 
+def cmd_review_live(args: argparse.Namespace) -> int:
+    """Public ATS research-to-review without external side effects."""
+    from review_queue import main as review_main
+
+    argv = ["--sources", args.sources, "--output", args.output,
+            "--max-jobs", str(args.max_jobs), "--max-queue", str(args.max_queue),
+            "--delay", str(args.delay)]
+    if args.ledger:
+        argv.extend(["--ledger", args.ledger])
+    for keyword in args.role_keyword:
+        argv.extend(["--role-keyword", keyword])
+    return review_main(argv)
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="jobops", description="jobsOps portable CLI")
     sub = ap.add_subparsers(dest="command", required=True)
@@ -471,6 +485,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_live.add_argument("--max-jobs", type=int, default=250)
     p_live.add_argument("--delay", type=float, default=0.5)
     p_live.set_defaults(func=cmd_discover_live)
+
+    p_review = sub.add_parser(
+        "review-live",
+        help="Create a review-only queue from public ATS feeds; never submit or send outreach",
+    )
+    p_review.add_argument("--sources", required=True, help="Private JSON ATS board registry")
+    p_review.add_argument("--output", required=True, help="Private review queue JSON path")
+    p_review.add_argument("--ledger", default="", help="Optional private dedupe ledger")
+    p_review.add_argument("--role-keyword", action="append", default=[], help="Title phrase, repeatable")
+    p_review.add_argument("--max-jobs", type=int, default=250)
+    p_review.add_argument("--max-queue", type=int, default=500)
+    p_review.add_argument("--delay", type=float, default=0.5)
+    p_review.set_defaults(func=cmd_review_live)
 
     p_doc = sub.add_parser("doctor", help="Check workspace, runtimes, and defaults")
     p_doc.add_argument("--workspace", default="")
