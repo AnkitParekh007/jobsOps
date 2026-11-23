@@ -19,7 +19,7 @@ Independent audit rubric: [PRODUCTION-READINESS.md](../PRODUCTION-READINESS.md).
 | Need | Go to |
 |---|---|
 | Product boundaries and inventory | [PRODUCT-SCOPE.md](../PRODUCT-SCOPE.md) |
-| DAG, frontiers, adapters | [Architecture](Architecture.md) · [ARCHITECTURE.md](../ARCHITECTURE.md) |
+| DAG, frontiers, adapters | [Architecture](Architecture.md) · [ARCHITECTURE.md](../ARCHITECTURE.md) · [Motion visuals](../visuals/index.html) |
 | Threats, SSRF, approvals | [Security & Threat Model](Security-and-Threat-Model.md) |
 | F01–F10 capability map | [Frontiers & Capabilities](Frontiers-and-Capabilities.md) |
 | Schemas and handoffs | [Contracts & Schemas](Contracts-and-Schemas.md) |
