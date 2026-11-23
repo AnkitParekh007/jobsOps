@@ -134,6 +134,8 @@ class InvokeResult:
     log_path: str
     argv: list[str]
     message: str = ""
+    broker_session_id: str = ""
+    allowed_tools: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -144,7 +146,11 @@ class InvokeResult:
             "log_path": self.log_path,
             "argv": list(self.argv),
             "message": self.message,
+            "broker_session_id": self.broker_session_id,
+            "allowed_tools": list(self.allowed_tools),
             "policy_version": POLICY_VERSION,
+            # Env/prompt allowlists are informational; broker is authoritative.
+            "permission_enforcement": "tool_broker",
         }
 
 
@@ -160,6 +166,8 @@ class AgentRuntime:
         raise NotImplementedError
 
     def invoke(self, req: InvokeRequest) -> InvokeResult:
+        from tool_broker import ToolBroker  # local import — seal scopes via broker
+
         info = self.detect()
         if not info.available:
             return InvokeResult(
@@ -171,9 +179,11 @@ class AgentRuntime:
                 [],
                 message=f"runtime unavailable: {self.provider}",
             )
-        # Enforce role tool allowlist at the sandbox boundary before argv/spawn.
+        # Authoritative enforcement: ToolBroker seals scopes before argv/spawn.
+        # Prompt headers and JOBOPS_ALLOWED_TOOLS are informational hints only.
         try:
-            allowed = resolve_allowed_tools(req.role, req.allowed_tools)
+            broker = ToolBroker.create(req.role, requested=req.allowed_tools)
+            allowed = broker.allowed_tools
         except ToolPermissionError as exc:
             return InvokeResult(
                 False,
@@ -184,20 +194,31 @@ class AgentRuntime:
                 [],
                 message=f"tool_permission_denied: {exc}",
             )
-        # Mutate request to the resolved allowlist so adapters cannot widen scope.
+        # Mutate request to the sealed allowlist so adapters cannot widen scope.
         req.allowed_tools = sorted(allowed)
         argv = self.build_argv(req)
         _assert_no_forbidden_flags(argv)
         req.log_out.parent.mkdir(parents=True, exist_ok=True)
         env = os.environ.copy()
         if req.extra_env:
-            env.update({k: str(v) for k, v in req.extra_env.items()})
+            # Strip any attempt by callers/agents to inject broader tool grants.
+            sanitized = {
+                k: str(v)
+                for k, v in req.extra_env.items()
+                if k not in {"JOBOPS_ALLOWED_TOOLS", "JOBOPS_AGENT_ROLE", "JOBOPS_CAPABILITY_TOKEN"}
+            }
+            env.update(sanitized)
         env["JOBOPS_AGENT_ROLE"] = req.role
+        # Informational only — broker/token is the real gate for jobsOps tools.
         env["JOBOPS_ALLOWED_TOOLS"] = ",".join(sorted(allowed))
         env["JOBOPS_POLICY_VERSION"] = POLICY_VERSION
+        env["JOBOPS_BROKER_SESSION"] = broker.session_id
+        # Never place the raw capability token in the child environment.
+        env.pop("JOBOPS_CAPABILITY_TOKEN", None)
         # Explicit authorization boundary for submit role.
         if req.role == "frontier_submit":
             if os.environ.get("JOBOPS_ALLOW_SUBMIT", "0") != "1":
+                broker.close()
                 return InvokeResult(
                     False,
                     self.provider,
@@ -206,11 +227,14 @@ class AgentRuntime:
                     str(req.log_out),
                     argv,
                     message="submit blocked: JOBOPS_ALLOW_SUBMIT!=1",
+                    broker_session_id=broker.session_id,
+                    allowed_tools=tuple(sorted(allowed)),
                 )
         # Non-submit roles must never receive privileged tool env grants.
         if req.role != "frontier_submit":
             granted = set(env.get("JOBOPS_ALLOWED_TOOLS", "").split(",")) - {""}
             if granted & PRIVILEGED_TOOLS:
+                broker.close()
                 return InvokeResult(
                     False,
                     self.provider,
@@ -219,9 +243,15 @@ class AgentRuntime:
                     str(req.log_out),
                     argv,
                     message="tool_permission_denied: privileged tools leaked to non-submit role",
+                    broker_session_id=broker.session_id,
+                    allowed_tools=tuple(sorted(allowed)),
                 )
         try:
             with req.log_out.open("w", encoding="utf-8") as logf:
+                logf.write(
+                    f"[agent_runtime] broker_session={broker.session_id} "
+                    f"tools={','.join(sorted(allowed))} enforcement=tool_broker\n"
+                )
                 proc = subprocess.Popen(
                     argv,
                     cwd=str(req.workspace),
@@ -243,9 +273,19 @@ class AgentRuntime:
                     timed_out = True
                     logf.write(f"\n[agent_runtime] TIMEOUT {req.timeout_sec}s killing {self.provider}\n")
         except OSError as exc:
+            broker.close()
             return InvokeResult(
-                False, self.provider, 127, False, str(req.log_out), argv, message=str(exc)
+                False,
+                self.provider,
+                127,
+                False,
+                str(req.log_out),
+                argv,
+                message=str(exc),
+                broker_session_id=broker.session_id,
+                allowed_tools=tuple(sorted(allowed)),
             )
+        broker.close()
         return InvokeResult(
             ok=(rc == 0 and not timed_out),
             provider=self.provider,
@@ -254,6 +294,8 @@ class AgentRuntime:
             log_path=str(req.log_out),
             argv=argv,
             message="ok" if rc == 0 and not timed_out else f"rc={rc}",
+            broker_session_id=broker.session_id,
+            allowed_tools=tuple(sorted(allowed)),
         )
 
 
@@ -303,9 +345,12 @@ class DeterministicRuntime(AgentRuntime):
         return [sys.executable, "-c", "raise SystemExit('deterministic_runtime_no_agent')"]
 
     def invoke(self, req: InvokeRequest) -> InvokeResult:
-        # Still enforce role tool allowlists even when no agent process is spawned.
+        from tool_broker import ToolBroker
+
+        # Still seal scopes via ToolBroker even when no agent process is spawned.
         try:
-            allowed = resolve_allowed_tools(req.role, req.allowed_tools)
+            broker = ToolBroker.create(req.role, requested=req.allowed_tools)
+            allowed = broker.allowed_tools
         except ToolPermissionError as exc:
             return InvokeResult(
                 False,
@@ -321,9 +366,10 @@ class DeterministicRuntime(AgentRuntime):
         msg = (
             "deterministic-only mode: agent invocation skipped "
             f"(role={req.role} tools={','.join(sorted(allowed))} "
-            f"prompt={req.prompt_file.name})"
+            f"broker={broker.session_id} prompt={req.prompt_file.name})"
         )
         req.log_out.write_text(msg + "\n", encoding="utf-8")
+        broker.close()
         return InvokeResult(
             False,
             self.provider,
@@ -332,6 +378,8 @@ class DeterministicRuntime(AgentRuntime):
             str(req.log_out),
             [],
             message=msg,
+            broker_session_id=broker.session_id,
+            allowed_tools=tuple(sorted(allowed)),
         )
 
 
