@@ -196,6 +196,9 @@ def discover(
         raise FeedError("invalid_delay")
     run = run_id or f"live_{uuid.uuid4().hex[:16]}"
     prior = read_prior_keys(ledger) if ledger else set()
+    if ledger is not None:
+        # Artifact ledger enforces FK(run_id) -> runs(run_id).
+        ledger.start_run(run, floor=0, phase="live_discovery")
     seen: set[str] = set()
     jobs: list[dict[str, Any]] = []
     states: list[dict[str, Any]] = []
