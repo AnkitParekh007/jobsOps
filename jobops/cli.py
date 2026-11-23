@@ -410,6 +410,17 @@ def cmd_approve(args: argparse.Namespace) -> int:
         led.close()
 
 
+def cmd_discover_live(args: argparse.Namespace) -> int:
+    """Public ATS GET-only discovery; no submit or outreach paths."""
+    from live_discovery import main as discover_main
+
+    argv = ["--sources", args.sources, "--output", args.output,
+            "--max-jobs", str(args.max_jobs), "--delay", str(args.delay)]
+    if args.ledger:
+        argv.extend(["--ledger", args.ledger])
+    return discover_main(argv)
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="jobops", description="jobsOps portable CLI")
     sub = ap.add_subparsers(dest="command", required=True)
@@ -449,6 +460,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_appr.add_argument("--fingerprint", required=True)
     p_appr.add_argument("--workspace", default="")
     p_appr.set_defaults(func=cmd_approve)
+
+    p_live = sub.add_parser(
+        "discover-live",
+        help="Read-only discovery from explicitly configured Greenhouse/Lever public API boards",
+    )
+    p_live.add_argument("--sources", required=True, help="Private JSON registry of approved ATS boards")
+    p_live.add_argument("--output", required=True, help="Local JSON evidence report")
+    p_live.add_argument("--ledger", default="", help="Optional private SQLite dedupe ledger")
+    p_live.add_argument("--max-jobs", type=int, default=250)
+    p_live.add_argument("--delay", type=float, default=0.5)
+    p_live.set_defaults(func=cmd_discover_live)
 
     p_doc = sub.add_parser("doctor", help="Check workspace, runtimes, and defaults")
     p_doc.add_argument("--workspace", default="")

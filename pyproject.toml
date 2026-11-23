@@ -38,6 +38,7 @@ py-modules = [
   "evidence_issuer",
   "inbox_outcomes",
   "learning_proposals",
+  "live_discovery",
   "ledger",
   "merge_shards",
   "mock_ats_portal",
