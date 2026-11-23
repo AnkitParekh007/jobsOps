@@ -11,9 +11,48 @@ from submission_authorize import (
     STATE_UNCERTAIN,
     acquire_form_lock,
     authorize_submission,
+    issue_consent_record,
+    issue_trusted_evidence,
     record_submission_outcome,
 )
 from user_workspace import write_candidate_profile
+
+_TEST_SECRET = b"jobops-test-evidence-secret-race"
+
+
+def _trusted_pkg(*, job_key: str, fingerprint: str) -> dict:
+    user_id = "user-alex"
+    session_id = "sess-race-1"
+    approval_id = "ap1"
+    claims = (
+        "posting_open",
+        "not_duplicate",
+        "hard_eligibility_met",
+        "filenames_correct",
+        "required_fields_complete",
+        "screening_answers_verified",
+        "no_auth_wall",
+        "portal_session",
+    )
+    out: dict = {"user_id": user_id, "session_id": session_id, "approval_id": approval_id}
+    for claim in claims:
+        out[claim] = issue_trusted_evidence(
+            claim=claim,
+            user_id=user_id,
+            job_key=job_key,
+            session_id=session_id,
+            artifact_fingerprint=fingerprint,
+            secret=_TEST_SECRET,
+        )
+    out["user_consent"] = issue_consent_record(
+        user_id=user_id,
+        job_key=job_key,
+        session_id=session_id,
+        artifact_fingerprint=fingerprint,
+        approval_id=approval_id,
+        secret=_TEST_SECRET,
+    )
+    return out
 
 
 def test_ledger_artifact_append_idempotent_on_replay(tmp_path: Path):
@@ -53,32 +92,24 @@ def test_ledger_artifact_append_idempotent_on_replay(tmp_path: Path):
 def test_form_lock_blocks_second_run_authorize(tmp_path: Path, monkeypatch):
     db = tmp_path / "jobops.db"
     url = "https://jobs.ashbyhq.com/acme/race-1"
+    fp = "a" * 64
+    job_key = f"url:{url}"
     pkg = {
         "canonical_url": url,
-        "job_key": f"url:{url}",
+        "job_key": job_key,
         "organization": "Acme",
         "role": "Engineer",
         "ats_score": 90,
         "quality_score": 85,
-        "pdf_fingerprint": "a" * 64,
-        "ats_score_fingerprint": "a" * 64,
-        "quality_score_fingerprint": "a" * 64,
+        "pdf_fingerprint": fp,
+        "ats_score_fingerprint": fp,
+        "quality_score_fingerprint": fp,
         "fingerprint_method": "fixture",
         "extracted_text": "Alex Candidate\nAngular React TypeScript",
-        "evidence_package": {
-            "posting_open": {"verified": True, "method": "http_head", "verified_at": "t"},
-            "not_duplicate": {"verified": True, "method": "ledger", "source": "ledger"},
-            "hard_eligibility_met": {"verified": True, "method": "policy", "proof": "e05"},
-            "filenames_correct": {"verified": True, "method": "filename_contract"},
-            "required_fields_complete": {"verified": True, "method": "form_scan"},
-            "screening_answers_verified": {"verified": True, "method": "facts"},
-            "no_auth_wall": {"verified": True, "method": "session_probe"},
-            "portal_session": {"status": "authorized", "session_id": "s1", "account_id": "a1"},
-            "user_consent": {"verified": True, "consent_id": "c1", "method": "workspace"},
-            "approval_id": "ap1",
-        },
+        "evidence_package": _trusted_pkg(job_key=job_key, fingerprint=fp),
     }
     monkeypatch.setenv("JOBOPS_ALLOW_SUBMIT", "1")
+    monkeypatch.setenv("JOBOPS_EVIDENCE_SECRET", _TEST_SECRET.decode())
 
     led1 = Ledger(db)
     led1.start_run("race-1", floor=40, phase="authorize")

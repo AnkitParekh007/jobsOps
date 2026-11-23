@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -329,34 +331,303 @@ INDEPENDENT_EVIDENCE_KEYS = (
     "user_consent",
 )
 
+TRUSTED_EVIDENCE_KIND = "trusted_evidence_v1"
+EVIDENCE_SECRET_ENV = "JOBOPS_EVIDENCE_SECRET"
+# Dev/test-only fallback — production must set JOBOPS_EVIDENCE_SECRET or workspace secret.
+_DEV_EVIDENCE_SECRET = b"jobops-dev-evidence-secret-not-for-production"
 
-def _evidence_truth(evidence: Mapping[str, Any], key: str) -> tuple[bool, Optional[str]]:
+
+def evidence_secret(*, workspace_home: Optional[Path] = None) -> bytes:
+    """
+    Resolve HMAC secret for trusted evidence.
+    Prefer env, then private workspace file; never accept agent-supplied secrets.
+    """
+    env = (os.environ.get(EVIDENCE_SECRET_ENV) or "").strip()
+    if env:
+        return env.encode("utf-8")
+    if workspace_home is not None:
+        path = Path(workspace_home) / "secrets" / "evidence_hmac.key"
+        if path.is_file():
+            raw = path.read_bytes().strip()
+            if raw:
+                return raw
+    return _DEV_EVIDENCE_SECRET
+
+
+def _evidence_payload_str(
+    *,
+    claim: str,
+    user_id: str,
+    job_key: str,
+    session_id: str,
+    artifact_fingerprint: str,
+    issuer: str,
+    issued_at: int,
+    expires_at: int,
+    nonce: str,
+) -> str:
+    return "|".join(
+        [
+            claim,
+            user_id,
+            job_key,
+            session_id,
+            artifact_fingerprint,
+            issuer,
+            str(issued_at),
+            str(expires_at),
+            nonce,
+        ]
+    )
+
+
+def issue_trusted_evidence(
+    *,
+    claim: str,
+    user_id: str,
+    job_key: str,
+    session_id: str,
+    artifact_fingerprint: str,
+    issuer: str = "jobops.authorize",
+    ttl_sec: int = 3600,
+    secret: Optional[bytes] = None,
+    now: Optional[int] = None,
+) -> dict[str, Any]:
+    """
+    Mint a signed evidence record. Only deterministic code holding the secret can issue.
+    Agents cannot forge valid records without the HMAC key.
+    """
+    import secrets as _secrets
+    import time
+
+    issued_at = int(now if now is not None else time.time())
+    expires_at = issued_at + int(ttl_sec)
+    nonce = _secrets.token_hex(8)
+    key = secret if secret is not None else evidence_secret()
+    payload = _evidence_payload_str(
+        claim=claim,
+        user_id=user_id,
+        job_key=job_key,
+        session_id=session_id,
+        artifact_fingerprint=artifact_fingerprint,
+        issuer=issuer,
+        issued_at=issued_at,
+        expires_at=expires_at,
+        nonce=nonce,
+    )
+    sig = hmac.new(key, payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return {
+        "kind": TRUSTED_EVIDENCE_KIND,
+        "claim": claim,
+        "user_id": user_id,
+        "job_key": job_key,
+        "session_id": session_id,
+        "artifact_fingerprint": artifact_fingerprint,
+        "issuer": issuer,
+        "issued_at": issued_at,
+        "expires_at": expires_at,
+        "nonce": nonce,
+        "sig": sig,
+    }
+
+
+def issue_consent_record(
+    *,
+    user_id: str,
+    job_key: str,
+    session_id: str,
+    artifact_fingerprint: str,
+    approval_id: str,
+    secret: Optional[bytes] = None,
+    ttl_sec: int = 3600,
+) -> dict[str, Any]:
+    """Consent bound to user + requisition + form session + artifact fingerprint."""
+    rec = issue_trusted_evidence(
+        claim="user_consent",
+        user_id=user_id,
+        job_key=job_key,
+        session_id=session_id,
+        artifact_fingerprint=artifact_fingerprint,
+        issuer="jobops.consent",
+        ttl_sec=ttl_sec,
+        secret=secret,
+    )
+    rec["approval_id"] = approval_id
+    # Re-sign including approval_id binding.
+    key = secret if secret is not None else evidence_secret()
+    payload = (
+        _evidence_payload_str(
+            claim=rec["claim"],
+            user_id=rec["user_id"],
+            job_key=rec["job_key"],
+            session_id=rec["session_id"],
+            artifact_fingerprint=rec["artifact_fingerprint"],
+            issuer=rec["issuer"],
+            issued_at=int(rec["issued_at"]),
+            expires_at=int(rec["expires_at"]),
+            nonce=str(rec["nonce"]),
+        )
+        + f"|{approval_id}"
+    )
+    rec["sig"] = hmac.new(key, payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return rec
+
+
+def verify_trusted_evidence(
+    record: Mapping[str, Any],
+    *,
+    expected_claim: str,
+    user_id: str,
+    job_key: str,
+    session_id: str,
+    artifact_fingerprint: str,
+    secret: Optional[bytes] = None,
+    now: Optional[int] = None,
+    require_approval_id: Optional[str] = None,
+) -> tuple[bool, str]:
+    """Deterministic verification of a trusted evidence / consent record."""
+    import time
+
+    if not isinstance(record, Mapping):
+        return False, "evidence_not_mapping"
+    if record.get("kind") != TRUSTED_EVIDENCE_KIND:
+        return False, "evidence_untrusted_kind"
+    if record.get("claim") != expected_claim:
+        return False, "evidence_claim_mismatch"
+    # Binding checks — reject cross-job / cross-user / cross-session forgeries.
+    if str(record.get("user_id") or "") != str(user_id):
+        return False, "evidence_user_mismatch"
+    if str(record.get("job_key") or "") != str(job_key):
+        return False, "evidence_job_mismatch"
+    if str(record.get("session_id") or "") != str(session_id):
+        return False, "evidence_session_mismatch"
+    if str(record.get("artifact_fingerprint") or "") != str(artifact_fingerprint):
+        return False, "evidence_fingerprint_mismatch"
+    try:
+        expires_at = int(record["expires_at"])
+        issued_at = int(record["issued_at"])
+    except (KeyError, TypeError, ValueError):
+        return False, "evidence_timestamps_invalid"
+    ts = int(now if now is not None else time.time())
+    if expires_at < ts:
+        return False, "evidence_expired"
+    if issued_at > ts + 60:
+        return False, "evidence_issued_in_future"
+    nonce = str(record.get("nonce") or "")
+    sig = str(record.get("sig") or "")
+    if not nonce or not sig:
+        return False, "evidence_missing_sig"
+    key = secret if secret is not None else evidence_secret()
+    payload = _evidence_payload_str(
+        claim=str(record.get("claim")),
+        user_id=str(record.get("user_id")),
+        job_key=str(record.get("job_key")),
+        session_id=str(record.get("session_id")),
+        artifact_fingerprint=str(record.get("artifact_fingerprint")),
+        issuer=str(record.get("issuer") or ""),
+        issued_at=issued_at,
+        expires_at=expires_at,
+        nonce=nonce,
+    )
+    if require_approval_id is not None or expected_claim == "user_consent":
+        approval = str(record.get("approval_id") or require_approval_id or "")
+        if not approval:
+            return False, "evidence_consent_missing_approval"
+        payload = payload + f"|{approval}"
+        if require_approval_id is not None and approval != require_approval_id:
+            return False, "evidence_approval_mismatch"
+    expected = hmac.new(key, payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, sig):
+        return False, "evidence_sig_invalid"
+    return True, "ok"
+
+
+def _binding_context(
+    evidence: Mapping[str, Any],
+    *,
+    job_key: str,
+    artifact_fingerprint: str,
+) -> dict[str, str]:
+    """Extract binding fields used to verify trusted evidence."""
+    session = evidence.get("portal_session")
+    session_id = ""
+    if isinstance(session, Mapping):
+        session_id = str(session.get("session_id") or "")
+    if not session_id:
+        session_id = str(evidence.get("session_id") or "")
+    user_id = str(evidence.get("user_id") or evidence.get("candidate_id") or "")
+    if not user_id:
+        consent = evidence.get("user_consent")
+        if isinstance(consent, Mapping):
+            user_id = str(consent.get("user_id") or "")
+    return {
+        "user_id": user_id,
+        "job_key": job_key,
+        "session_id": session_id,
+        "artifact_fingerprint": artifact_fingerprint,
+    }
+
+
+def _evidence_truth(
+    evidence: Mapping[str, Any],
+    key: str,
+    *,
+    job_key: str = "",
+    artifact_fingerprint: str = "",
+    secret: Optional[bytes] = None,
+) -> tuple[bool, Optional[str]]:
     """
     Independently verify an authorization claim from evidence_package.
-    Accepts nested objects with verified=true + method/source, or explicit proof fields.
-    Rejects bare True booleans copied from agent checklists.
+    Requires trusted_evidence_v1 HMAC records bound to user/job/session/fingerprint.
+    Rejects bare booleans and self-asserted verified=true objects.
     """
     if key not in evidence:
         return False, f"evidence_missing:{key}"
     val = evidence[key]
     if val is True:
-        # Agent-supplied boolean alone is insufficient.
         return False, f"evidence_untrusted_boolean:{key}"
     if val is False or val is None:
         return False, f"evidence_false:{key}"
-    if isinstance(val, Mapping):
-        if val.get("verified") is True and (
-            val.get("method") or val.get("source") or val.get("proof") or val.get("verified_at")
-        ):
-            return True, None
-        if val.get("status") == "authorized" and (val.get("session_id") or val.get("account_id")):
-            return True, None
-        if val.get("consent") is True and val.get("consent_id"):
-            return True, None
-        return False, f"evidence_incomplete:{key}"
     if isinstance(val, str) and val.strip():
-        return True, None
-    return False, f"evidence_invalid:{key}"
+        # Opaque strings are not proof.
+        return False, f"evidence_untrusted_string:{key}"
+    if not isinstance(val, Mapping):
+        return False, f"evidence_invalid:{key}"
+
+    # Self-asserted shapes (verified=true without HMAC) are explicitly rejected.
+    if val.get("kind") != TRUSTED_EVIDENCE_KIND:
+        if val.get("verified") is True:
+            return False, f"evidence_self_asserted:{key}"
+        if val.get("status") == "authorized":
+            return False, f"evidence_self_asserted_session:{key}"
+        if val.get("consent") is True or val.get("consent_id"):
+            return False, f"evidence_self_asserted_consent:{key}"
+        return False, f"evidence_untrusted_kind:{key}"
+
+    binding = _binding_context(
+        evidence, job_key=job_key, artifact_fingerprint=artifact_fingerprint
+    )
+    # Prefer bindings embedded on the record itself when context is incomplete.
+    user_id = binding["user_id"] or str(val.get("user_id") or "")
+    session_id = binding["session_id"] or str(val.get("session_id") or "")
+    fp = binding["artifact_fingerprint"] or str(val.get("artifact_fingerprint") or "")
+    jk = binding["job_key"] or str(val.get("job_key") or "")
+    if not user_id or not session_id or not fp or not jk:
+        return False, f"evidence_binding_incomplete:{key}"
+
+    ok, reason = verify_trusted_evidence(
+        val,
+        expected_claim=key,
+        user_id=user_id,
+        job_key=jk,
+        session_id=session_id,
+        artifact_fingerprint=fp,
+        secret=secret,
+        require_approval_id=str(val.get("approval_id")) if key == "user_consent" else None,
+    )
+    if not ok:
+        return False, f"{reason}:{key}"
+    return True, None
 
 
 def derive_authorization_checklist(
@@ -372,6 +643,8 @@ def derive_authorization_checklist(
     evidence: Mapping[str, Any],
     consent_auto_submit: bool,
     user_approved: bool,
+    job_key: str = "",
+    secret: Optional[bytes] = None,
 ) -> tuple[dict[str, bool], list[str]]:
     """
     Build checklist from independent verification only.
@@ -399,26 +672,40 @@ def derive_authorization_checklist(
         "screening_answers_verified",
         "no_auth_wall",
     ):
-        ok, reason = _evidence_truth(evidence, key)
+        ok, reason = _evidence_truth(
+            evidence, key, job_key=job_key, artifact_fingerprint=fingerprint, secret=secret
+        )
         checklist[key] = ok
         if not ok and reason:
             blocking.append(reason)
 
-    session_ok, session_reason = _evidence_truth(evidence, "portal_session")
+    session_ok, session_reason = _evidence_truth(
+        evidence,
+        "portal_session",
+        job_key=job_key,
+        artifact_fingerprint=fingerprint,
+        secret=secret,
+    )
     checklist["session_authorized_if_needed"] = session_ok
     if not session_ok and session_reason:
         blocking.append(session_reason)
 
-    consent_ok, consent_reason = _evidence_truth(evidence, "user_consent")
+    consent_ok, consent_reason = _evidence_truth(
+        evidence,
+        "user_consent",
+        job_key=job_key,
+        artifact_fingerprint=fingerprint,
+        secret=secret,
+    )
     if not consent_ok:
-        # Fall back to workspace consent + explicit user_approved flag in evidence.
-        if consent_auto_submit and user_approved and evidence.get("approval_id"):
-            consent_ok = True
-            checklist["auto_submit_or_user_approved"] = True
-        elif consent_reason:
+        # No fallback to bare approval_id — consent must be a bound trusted record.
+        if consent_reason:
             blocking.append(consent_reason)
+        checklist["auto_submit_or_user_approved"] = False
     else:
-        checklist["auto_submit_or_user_approved"] = True
+        checklist["auto_submit_or_user_approved"] = bool(consent_auto_submit)
+        if not consent_auto_submit:
+            blocking.append("consent_auto_submit_disabled")
 
     return checklist, blocking
 
@@ -568,13 +855,12 @@ def authorize_submission(
         else bool(profile.consent.get("auto_submit_enabled"))
     )
     # Global kill switches — external submit disabled by default.
-    import os
-
     if os.environ.get("JOBOPS_ALLOW_SUBMIT", "0") != "1":
         auto_submit = False
     if os.environ.get("JOBOPS_ENABLE_LIVE_SUBMIT", "0") != "1":
         # Live portal submit remains off unless explicitly enabled.
         pass
+    evidence_key = evidence_secret(workspace_home=workspace_home)
 
     extracted = str(package_input.get("extracted_text") or "")
     pdf_path = package_input.get("pdf_path")
@@ -639,9 +925,10 @@ def authorize_submission(
     evidence["checklist_source"] = "independent_derivation"
     evidence["ignored_agent_checklist"] = True
 
+    # user_approved is derived only from a bound trusted consent record (not bare approval_id).
+    consent_rec = evidence.get("user_consent")
     user_approved = bool(
-        evidence.get("approval_id")
-        or (isinstance(evidence.get("user_consent"), Mapping) and evidence["user_consent"].get("verified"))
+        isinstance(consent_rec, Mapping) and consent_rec.get("kind") == TRUSTED_EVIDENCE_KIND
     )
 
     checklist, evidence_blocking = derive_authorization_checklist(
@@ -656,6 +943,8 @@ def authorize_submission(
         evidence=evidence,
         consent_auto_submit=auto_submit,
         user_approved=user_approved,
+        job_key=jk,
+        secret=evidence_key,
     )
 
     blocking: list[str] = []
@@ -772,10 +1061,13 @@ def authorize_submission(
             cap_verdict.message,
         )
 
-    # Ready for approval — materials + floors pass (default / dry-run path)
-    if dry_run or package_input.get("require_human_approval") or not checklist.get(
+    # Ready for approval — materials + floors pass (default / dry-run path).
+    # When the caller requested auto-submit but evidence/consent failed, still
+    # surface independent evidence_blocking reasons (do not hide forge failures).
+    needs_human = bool(package_input.get("require_human_approval")) or not checklist.get(
         "auto_submit_or_user_approved", False
-    ):
+    )
+    if dry_run or (needs_human and not auto_submit):
         extra_block: list[str] = []
         if dry_run:
             extra_block.append("dry_run_ready_for_approval")
@@ -783,6 +1075,10 @@ def authorize_submission(
             extra_block.append("human_approval_required")
         if not auto_submit:
             extra_block.append("submit_disabled_by_default")
+        # Include evidence gaps so forged/self-asserted packages are auditable.
+        for reason in evidence_blocking:
+            if reason not in extra_block:
+                extra_block.append(reason)
         pkg = build_application_package(
             job_key=jk,
             canonical_url=canon,
@@ -802,7 +1098,11 @@ def authorize_submission(
             extracted_text=extracted,
             session_lock=lock_info,
             daily_cap=daily_cap_info,
-            evidence_package={**evidence, "ready_for_approval": True},
+            evidence_package={
+                **evidence,
+                "ready_for_approval": True,
+                **({"dry_run": True} if dry_run else {}),
+            },
             notes="Ready for approval — materials validated; no live submit",
             retryable=False,
             policy_version=policy_version,
@@ -816,6 +1116,14 @@ def authorize_submission(
             "ready_for_approval",
             "materials validated; awaiting approval / dry-run",
         )
+
+    # Auto-submit requested but consent/evidence incomplete → fall through to
+    # full authorize path so forge/mismatch reasons are returned explicitly.
+    if needs_human and auto_submit:
+        blocking.extend(evidence_blocking)
+        if not checklist.get("auto_submit_or_user_approved", False):
+            blocking.append("human_approval_required")
+        # Continue into lock + submit checklist gates below.
 
     # Full authorize path — independent evidence required (ignore agent checklist).
     blocking.extend(evidence_blocking)
@@ -1022,7 +1330,15 @@ def _cli() -> int:
     ap.add_argument("--run-id", required=True)
     ap.add_argument("--db", default="", help="ledger db")
     ap.add_argument("--out", default="", help="write authorize result JSON")
-    ap.add_argument("--dry-run", action="store_true", help="stop at ReadyForApproval")
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Stop at ReadyForApproval (never SubmissionAuthorized). "
+            "Does not perform live portal submit; may still write ledger artifacts "
+            "when --db is provided."
+        ),
+    )
     ap.add_argument("--acquire-lock", action="store_true", help="acquire form lock first")
     ap.add_argument("--submits-today", type=int, default=-1)
     ap.add_argument("--shortlist", default="", help="ranked-shortlist.json — gate invoke check")

@@ -13,12 +13,15 @@ from submission_authorize import (
     STATE_UNCERTAIN,
     acquire_form_lock,
     authorize_submission,
+    issue_consent_record,
+    issue_trusted_evidence,
     record_submission_outcome,
     would_allow_submit,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
 FIX = ROOT / "evals" / "fixtures" / "e08"
+TEST_SECRET = b"jobops-test-evidence-secret-e08"
 
 
 def _load(name: str) -> dict:
@@ -45,8 +48,11 @@ def test_daily_cap_blocks_authorize(tmp_path: Path):
 
 def test_form_lock_required(tmp_path: Path, monkeypatch):
     data = _load("lock_missing.json")
-    data["evidence_package"] = _independent_evidence()
+    data["evidence_package"] = _independent_evidence(
+        job_key=data["job_key"], fingerprint=data["pdf_fingerprint"]
+    )
     monkeypatch.setenv("JOBOPS_ALLOW_SUBMIT", "1")
+    monkeypatch.setenv("JOBOPS_EVIDENCE_SECRET", TEST_SECRET.decode())
     result = authorize_submission(
         data,
         run_id="e08-nolock",
@@ -62,20 +68,45 @@ def test_form_lock_required(tmp_path: Path, monkeypatch):
     assert any("form_lock" in b for b in result.blocking_reasons)
 
 
-def _independent_evidence(**overrides):
-    """Evidence objects — bare booleans are intentionally insufficient."""
-    base = {
-        "posting_open": {"verified": True, "method": "http_head", "verified_at": "2026-01-01T00:00:00Z"},
-        "not_duplicate": {"verified": True, "method": "ledger_job_key", "source": "ledger"},
-        "hard_eligibility_met": {"verified": True, "method": "policy_eligibility_safety", "proof": "e05"},
-        "filenames_correct": {"verified": True, "method": "filename_contract"},
-        "required_fields_complete": {"verified": True, "method": "form_scan"},
-        "screening_answers_verified": {"verified": True, "method": "verified_facts_only"},
-        "no_auth_wall": {"verified": True, "method": "session_probe"},
-        "portal_session": {"status": "authorized", "session_id": "sess-test-1", "account_id": "acct-1"},
-        "user_consent": {"verified": True, "consent_id": "consent-1", "method": "workspace_consent"},
-        "approval_id": "approval-test-1",
-    }
+def _independent_evidence(
+    *,
+    job_key: str = "url:https://jobs.ashbyhq.com/acme/frontend-nolock",
+    fingerprint: str = "lok111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+    user_id: str = "user-alex",
+    session_id: str = "sess-test-1",
+    approval_id: str = "approval-test-1",
+    secret: bytes = TEST_SECRET,
+    **overrides,
+):
+    """HMAC-signed trusted evidence — self-asserted verified=true is insufficient."""
+    claims = (
+        "posting_open",
+        "not_duplicate",
+        "hard_eligibility_met",
+        "filenames_correct",
+        "required_fields_complete",
+        "screening_answers_verified",
+        "no_auth_wall",
+        "portal_session",
+    )
+    base: dict = {"user_id": user_id, "session_id": session_id, "approval_id": approval_id}
+    for claim in claims:
+        base[claim] = issue_trusted_evidence(
+            claim=claim,
+            user_id=user_id,
+            job_key=job_key,
+            session_id=session_id,
+            artifact_fingerprint=fingerprint,
+            secret=secret,
+        )
+    base["user_consent"] = issue_consent_record(
+        user_id=user_id,
+        job_key=job_key,
+        session_id=session_id,
+        artifact_fingerprint=fingerprint,
+        approval_id=approval_id,
+        secret=secret,
+    )
     base.update(overrides)
     return base
 
@@ -86,9 +117,11 @@ def test_form_lock_held_can_authorize(tmp_path: Path, monkeypatch):
     led = Ledger(db)
     led.start_run("e08-lock", floor=40, phase="authorize")
     acquire_form_lock(led, canonical_url=data["canonical_url"], run_id="e08-lock")
-    # Agent checklist booleans must NOT be sufficient — supply independent evidence.
-    data["evidence_package"] = _independent_evidence()
+    data["evidence_package"] = _independent_evidence(
+        job_key=data["job_key"], fingerprint=data["pdf_fingerprint"]
+    )
     monkeypatch.setenv("JOBOPS_ALLOW_SUBMIT", "1")
+    monkeypatch.setenv("JOBOPS_EVIDENCE_SECRET", TEST_SECRET.decode())
     result = authorize_submission(
         data,
         run_id="e08-lock",
