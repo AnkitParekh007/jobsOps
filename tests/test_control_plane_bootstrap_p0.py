@@ -33,6 +33,7 @@ from authority import (
 )
 from confirmation_test_channels import (
     EchoChallengeChannel,
+    ForgedTrustedInteractiveEchoChannel,
     ProgrammaticEchoChannel,
 )
 from ledger import Ledger
@@ -95,11 +96,30 @@ def test_installer_from_untrusted_context_cannot_create_trust(tmp_path, monkeypa
 
 
 def test_reset_control_plane_forbidden_outside_authenticated_tests(monkeypatch):
-    """P0-01: production code cannot clear contamination via the test reset helper."""
+    """P1: production code cannot clear contamination via the test reset helper."""
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     monkeypatch.setenv("JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET", "0")
     with pytest.raises(AuthorityError, match="reset_forbidden_outside_tests"):
         reset_control_plane_for_tests()
+
+
+def test_reset_flag_alone_without_pytest_forbidden(monkeypatch):
+    """P1: JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET alone never unlocks production."""
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setenv("JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET", "1")
+    with pytest.raises(AuthorityError, match="reset_forbidden_outside_tests"):
+        reset_control_plane_for_tests()
+
+
+def test_init_cli_source_does_not_install_privilege():
+    """P0-01 static guard: cmd_init must never provision authority credentials."""
+    import jobops.cli as cli
+
+    src = inspect.getsource(cli.cmd_init)
+    assert "install_control_plane_privilege" not in src
+    assert "bootstrap_control_plane" not in src
+    assert "issue_test_grant" not in src
+    assert "control_plane.privilege" not in src
 
 
 def test_approve_cli_source_does_not_reset_or_install_or_clear_role():
@@ -259,9 +279,80 @@ def test_echo_channel_not_exported_from_production_module():
 
     assert not hasattr(ac, "EchoChallengeChannel")
     assert not hasattr(ac, "FabricatedConfirmationChannel")
+    assert not hasattr(ac, "ForgedTrustedInteractiveEchoChannel")
+    # Attribute markers are not a trust API.
+    assert not hasattr(ac, "_TRUSTED_INTERACTIVE_ATTR")
+    assert hasattr(ac, "_is_production_confirmation_channel")
     # Test helper module still provides them for authenticated fixtures.
     mod = importlib.import_module("confirmation_test_channels")
     assert hasattr(mod, "EchoChallengeChannel")
+    assert hasattr(mod, "ForgedTrustedInteractiveEchoChannel")
+
+
+def test_forged_trusted_interactive_attribute_cannot_approve(
+    jobops_home: Path, monkeypatch
+):
+    """
+    P0-03: a custom class that echoes the challenge and sets
+    ``_jobops_trusted_interactive=True`` must not approve without test auth.
+    """
+    monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
+    monkeypatch.setenv("JOBOPS_ALLOW_TEST_CONFIRMATION", "0")
+    led = Ledger(jobops_home / "state" / "forge-attr.db")
+    led.start_run("forge-attr-1", floor=40)
+    with open_orchestrator(jobops_home, principal="pytest"):
+        ctl = ApprovalController(led, workspace_home=jobops_home)
+        ctl.request_approval(
+            approval_id="forge-attr",
+            user_id="owner",
+            job_key="job:forge-attr",
+            session_id="sess-forge-attr",
+            artifact_fingerprint="d" * 64,
+        )
+        forged = ForgedTrustedInteractiveEchoChannel()
+        assert getattr(forged, "_jobops_trusted_interactive", False) is True
+        with pytest.raises(
+            ApprovalAuthError, match="confirmation_channel_substitution_forbidden"
+        ):
+            resolve_confirmation_channel(forged, workspace_home=jobops_home)
+        with pytest.raises(
+            ApprovalAuthError, match="confirmation_channel_substitution_forbidden"
+        ):
+            ctl.interactive_approve(
+                approval_id="forge-attr",
+                principal="owner",
+                expected_job_key="job:forge-attr",
+                expected_session_id="sess-forge-attr",
+                expected_fingerprint="d" * 64,
+                channel=forged,
+                workspace_home=jobops_home,
+            )
+        # Still pending — forged channel never decided it.
+        row = led.get_approval("forge-attr")
+        assert row is not None
+        assert row["status"] == "pending"
+    led.close()
+
+
+def test_confirmation_flag_alone_without_pytest_forbidden(
+    jobops_home: Path, monkeypatch
+):
+    """P1: JOBOPS_ALLOW_TEST_CONFIRMATION alone never unlocks production channels."""
+    monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setenv("JOBOPS_ALLOW_TEST_CONFIRMATION", "1")
+    with pytest.raises(
+        ApprovalAuthError, match="confirmation_channel_substitution_forbidden"
+    ):
+        resolve_confirmation_channel(
+            EchoChallengeChannel(), workspace_home=jobops_home
+        )
+    with pytest.raises(
+        ApprovalAuthError, match="confirmation_channel_substitution_forbidden"
+    ):
+        resolve_confirmation_channel(
+            ForgedTrustedInteractiveEchoChannel(), workspace_home=jobops_home
+        )
 
 
 def test_replay_after_interactive_approve_rejected(jobops_home: Path, monkeypatch):

@@ -2,7 +2,7 @@
 
 Provider-neutral, policy-governed job search operations. Discovery, verification, ranking, and optional controlled submission run through a deterministic harness — not a single-vendor prompt.
 
-**Status:** foundation in progress. Not production-ready. External submit and outreach send are **off by default**.
+**Status:** mergeable foundation in progress — **not** a certified production release. Not production-ready. External submit and outreach send are **off by default**.
 
 ## Quick start
 

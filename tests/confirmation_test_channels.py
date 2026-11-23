@@ -2,8 +2,9 @@
 Test-only confirmation channels.
 
 Never imported by production CLI/authorization paths. Synthetic echo providers
-require ``JOBOPS_ALLOW_TEST_CONFIRMATION=1`` + privilege when passed into
-``InteractiveApprovalGate`` (see ``resolve_confirmation_channel``).
+require ``PYTEST_CURRENT_TEST`` + ``JOBOPS_ALLOW_TEST_CONFIRMATION=1`` + privilege
+when passed into ``InteractiveApprovalGate`` (see ``resolve_confirmation_channel``).
+Forgeable ``_jobops_trusted_interactive`` markers never unlock production.
 """
 from __future__ import annotations
 
@@ -39,6 +40,19 @@ class ProgrammaticEchoChannel:
     Used by negative tests to prove production authorization rejects channel
     substitution without authenticated test configuration.
     """
+
+    def present_and_confirm(self, prompt: ConfirmationPrompt) -> str:
+        return prompt.challenge
+
+
+class ForgedTrustedInteractiveEchoChannel:
+    """
+    Adversarial: echoes the challenge AND forges the old trusted-interactive
+    attribute. Must never approve without authenticated pytest test config —
+    attribute markers are not a production trust signal.
+    """
+
+    _jobops_trusted_interactive = True
 
     def present_and_confirm(self, prompt: ConfirmationPrompt) -> str:
         return prompt.challenge

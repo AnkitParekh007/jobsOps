@@ -1,6 +1,6 @@
 # User guide: installation, manual, scheduled and event-triggered runs
 
-**Status:** Foundation CLI implemented (`jobops init|doctor|report|run`). Schedule/event watchers remain target UX. External submit/outreach send stay off by default. Not production-ready.
+**Status:** Foundation CLI implemented (`jobops init|doctor|report|run` + `jobops control-plane provision`). Schedule/event watchers remain target UX. External submit/outreach send stay off by default. Mergeable foundation only — **not** a certified production release / not production-ready. `jobops init` never installs control-plane credentials; operators must run `jobops control-plane provision` explicitly.
 
 ## The universal path
 

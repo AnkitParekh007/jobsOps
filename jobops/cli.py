@@ -31,25 +31,13 @@ def _repo_root() -> Path:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    paths = ensure_workspace(Path(args.workspace) if args.workspace else None)
-    # Install OS-gated control-plane privilege when explicitly enabled.
-    if os.environ.get("JOBOPS_CONTROL_PLANE", "0") == "1":
-        from authority import install_control_plane_privilege
+    """
+    Create private workspace + candidate profile.
 
-        try:
-            install_control_plane_privilege(paths["home"])
-        except Exception as exc:  # noqa: BLE001 — surface to operator JSON
-            print(
-                json.dumps(
-                    {
-                        "ok": False,
-                        "error": f"control_plane_privilege_install_failed:{exc}",
-                        "home": str(paths["home"]),
-                    },
-                    indent=2,
-                )
-            )
-            return 2
+    Never installs control-plane privilege or authority credentials. Operators
+    must run ``jobops control-plane provision`` separately after explicit approval.
+    """
+    paths = ensure_workspace(Path(args.workspace) if args.workspace else None)
     existing = paths["profile"]
     if existing.is_file() and not args.force:
         print(json.dumps({"ok": True, "already_initialized": True, "home": str(paths["home"])}, indent=2))

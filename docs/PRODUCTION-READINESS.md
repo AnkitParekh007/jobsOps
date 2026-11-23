@@ -2,6 +2,8 @@
 
 **Planned milestone:** after Cursor finishes implementation and PRs are reviewed/merged, an independent audit will examine the actual repository. This document is the audit rubric, not a certification.
 
+**Mergeable foundation vs certified production release:** A green CI on a reviewed PR (including this foundation work) means the code may be mergeable as an experimental substrate. It does **not** declare production readiness, authorize live submit/outreach, or certify a production release. Certification requires the independent audit workflow below and an explicit release decision.
+
 ## Audit dimensions
 1. **Product:** onboarding, permissions, easy first run, clear no-AI capability and errors.
 2. **Architecture:** modular runtime, deterministic orchestrator, 10 logical frontiers, typed handoffs, least privilege.

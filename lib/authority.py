@@ -354,13 +354,14 @@ def reset_control_plane_for_tests() -> None:
     """
     Test-only: clear contamination/seal so fixtures can re-bootstrap.
 
-    Forbidden in production CLI paths. Requires an authenticated test
-    configuration (``PYTEST_CURRENT_TEST`` or ``JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET=1``).
-    Never clears ``JOBOPS_AGENT_ROLE`` and never installs privilege credentials.
+    Forbidden in production CLI paths. Requires **both** ``PYTEST_CURRENT_TEST``
+    (pytest harness) and ``JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET=1``. The env
+    flag alone never unlocks production. Never clears ``JOBOPS_AGENT_ROLE`` and
+    never installs privilege credentials.
     """
     allowed = (
         "PYTEST_CURRENT_TEST" in os.environ
-        or (os.environ.get("JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET") or "0") == "1"
+        and (os.environ.get("JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET") or "0") == "1"
     )
     if not allowed:
         raise AuthorityError("control_plane_reset_forbidden_outside_tests")
@@ -515,7 +516,8 @@ def issue_test_grant(
     Production approval must use ``issue_orchestrator_grant`` instead. Still refuses
     agent roles and contaminated processes. ``bootstrap_control_plane`` itself never
     auto-creates the privilege file — only this helper / ``jobops control-plane
-    provision`` / ``jobops init`` / ``install_control_plane_privilege`` may install it.
+    provision`` / ``install_control_plane_privilege`` may install it.
+    ``jobops init`` never installs privilege.
     """
     home = Path(workspace_home).expanduser().resolve()
     install_control_plane_privilege(home)

@@ -1,6 +1,6 @@
 # Runtime adapter capabilities
 
-**Status:** Detect + smoke only unless noted. Not production-certified for unattended submit. **Live automatic submission remains disabled.**
+**Status:** Detect + smoke only unless noted. Describes a **mergeable foundation**, not a **certified production release**. Not production-certified for unattended submit. **Live automatic submission remains disabled.**
 
 | Provider | Detect | build_argv smoke | Unattended invoke | ToolBroker seal | Minimal agent env | OS sandbox of child CLI | Notes |
 |---|---|---|---|---|---|---|---|
@@ -19,8 +19,8 @@
   - Fail closed when third-party CLI restrictions cannot be verified; **sensitive roles (`frontier_submit`, `outreach`) never allow unsandboxed opt-in**
   - Privileged tools only for `frontier_submit`; submit kill switches
   - `ControlPlaneController` signed `AuthorityGrant` required for `OrchestratorContext`
-  - Interactive `InteractiveApprovalGate` → MAC'd `ConfirmationReceipt` → stored single-use `UserSession` (production TTY only; synthetic channels need authenticated test config)
-  - Control plane requires pre-provisioned OS-openable `secrets/control_plane.privilege` (mode 0600; `jobops control-plane provision`) — env flag alone fails closed; approve never auto-installs
+  - Interactive `InteractiveApprovalGate` → MAC'd `ConfirmationReceipt` → stored single-use `UserSession` (production trusts only exact-type `TtyConfirmationChannel`; forgeable attributes rejected; synthetic channels need pytest + `JOBOPS_ALLOW_TEST_CONFIRMATION`)
+  - Control plane requires pre-provisioned OS-openable `secrets/control_plane.privilege` (mode 0600; explicit `jobops control-plane provision` only) — env flag alone fails closed; `jobops init` / `jobops approve` never auto-install
   - HMAC evidence + durable approvals; approve bind/consume/decide is atomic (`BEGIN IMMEDIATE`)
   - Permanent `application_identities` guard across dates/runs; atomic `submission_reservations` **required** before authorize; consume on Applied/Submitted; `uncertain` blocks retry
   - Cross-process SQLite reservation / daily-cap serialization (`BEGIN IMMEDIATE`)

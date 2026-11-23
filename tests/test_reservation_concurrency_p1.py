@@ -71,6 +71,8 @@ def _worker_reserve(args: tuple) -> tuple[bool, str]:
     from authority import install_control_plane_privilege
 
     os.environ["JOBOPS_CONTROL_PLANE"] = "1"
+    # Spawn workers are still under the pytest suite — both gates required.
+    os.environ.setdefault("PYTEST_CURRENT_TEST", "spawn-worker-reserve")
     os.environ["JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET"] = "1"
     os.environ.pop("JOBOPS_AGENT_ROLE", None)
     reset_control_plane_for_tests()
@@ -292,6 +294,7 @@ def _worker_authorize(args: tuple) -> bool:
     from authority import install_control_plane_privilege
 
     os.environ["JOBOPS_CONTROL_PLANE"] = "1"
+    os.environ.setdefault("PYTEST_CURRENT_TEST", "spawn-worker-authorize")
     os.environ["JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET"] = "1"
     os.environ["JOBOPS_EVIDENCE_SECRET"] = SECRET.decode()
     os.environ["JOBOPS_ALLOW_SUBMIT"] = "1"

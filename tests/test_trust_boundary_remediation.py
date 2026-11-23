@@ -378,6 +378,7 @@ def test_pending_approval_cannot_issue_evidence(jobops_home: Path, monkeypatch):
 def _reserve_cap_worker(args: tuple) -> tuple[bool, str]:
     db, home, i, today = args
     os.environ["JOBOPS_CONTROL_PLANE"] = "1"
+    os.environ.setdefault("PYTEST_CURRENT_TEST", "spawn-worker-reserve-cap")
     os.environ["JOBOPS_ALLOW_TEST_CONTROL_PLANE_RESET"] = "1"
     os.environ.pop("JOBOPS_AGENT_ROLE", None)
     reset_control_plane_for_tests()

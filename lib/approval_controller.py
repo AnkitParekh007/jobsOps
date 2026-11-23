@@ -38,9 +38,6 @@ from trust_boundary import (  # noqa: E402
 
 DEFAULT_SESSION_TTL_SEC = 900
 
-# Marker attribute for production-trusted interactive channels (TTY).
-_TRUSTED_INTERACTIVE_ATTR = "_jobops_trusted_interactive"
-
 
 class ApprovalAuthError(PermissionError):
     """Raised when approval create/decide is refused."""
@@ -132,9 +129,13 @@ class ConfirmationChannel(Protocol):
 
 
 class TtyConfirmationChannel:
-    """Trusted interactive TTY channel — model code cannot drive this silently."""
+    """
+    Sole production-trusted interactive confirmation channel.
 
-    _jobops_trusted_interactive = True
+    Trust is by exact type identity (``type(channel) is TtyConfirmationChannel``),
+    not by forgeable attributes. Subclasses and arbitrary objects that set
+    ``_jobops_trusted_interactive`` (or any other marker) never qualify.
+    """
 
     def present_and_confirm(self, prompt: ConfirmationPrompt) -> str:
         if not sys.stdin.isatty() or not sys.stdout.isatty():
@@ -147,19 +148,24 @@ class TtyConfirmationChannel:
             raise ApprovalAuthError("interactive_confirmation_aborted") from exc
 
 
-def _is_trusted_interactive_channel(channel: object) -> bool:
-    return bool(getattr(channel, _TRUSTED_INTERACTIVE_ATTR, False))
+def _is_production_confirmation_channel(channel: object) -> bool:
+    """Exact-type gate — attribute markers and subclasses are not trusted."""
+    return type(channel) is TtyConfirmationChannel
 
 
 def _authorize_test_confirmation_channel(workspace_home: Path) -> None:
     """
-    Allow non-TTY confirmation channels only under authenticated test config.
+    Allow non-TTY confirmation channels only under authenticated pytest config.
 
-    Requires ``JOBOPS_ALLOW_TEST_CONFIRMATION=1``, a pre-existing privilege
-    credential, and a non-agent process. Production approval never sets this flag.
+    Requires **both** ``PYTEST_CURRENT_TEST`` (pytest harness) and
+    ``JOBOPS_ALLOW_TEST_CONFIRMATION=1``, plus a pre-existing privilege
+    credential and a non-agent process. The env flag alone never unlocks
+    production authorization.
     """
     import os
 
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        raise ApprovalAuthError("confirmation_channel_substitution_forbidden")
     if (os.environ.get("JOBOPS_ALLOW_TEST_CONFIRMATION") or "0") != "1":
         raise ApprovalAuthError("confirmation_channel_substitution_forbidden")
     if is_untrusted_agent_role(agent_role_from_env()):
@@ -178,12 +184,15 @@ def resolve_confirmation_channel(
     workspace_home: Path | str,
 ) -> ConfirmationChannel:
     """
-    Production default is TTY. Synthetic / echo channels require test auth.
+    Production default is the concrete TTY channel type.
+
+    Synthetic / echo / attribute-forged channels require authenticated pytest
+    test config — never qualify via forgeable markers.
     """
     home = Path(workspace_home).expanduser().resolve()
     if channel is None:
         return TtyConfirmationChannel()
-    if _is_trusted_interactive_channel(channel):
+    if _is_production_confirmation_channel(channel):
         return channel
     _authorize_test_confirmation_channel(home)
     return channel
@@ -484,8 +493,9 @@ def issue_confirmed_session(
     Preferred entry: interactive gate → confirmation receipt → stored session.
 
     Default channel is TTY. Synthetic echo channels are refused unless an
-    authenticated test configuration is active (``JOBOPS_ALLOW_TEST_CONFIRMATION=1``
-    + privilege). Model-controlled code cannot mint a valid echo without the gate.
+    authenticated pytest configuration is active (``PYTEST_CURRENT_TEST`` +
+    ``JOBOPS_ALLOW_TEST_CONFIRMATION=1`` + privilege). Attribute markers never
+    qualify. Model-controlled code cannot mint a valid echo without the gate.
     """
     gate = InteractiveApprovalGate(
         ledger,

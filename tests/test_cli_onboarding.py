@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from authority import privilege_path
 from jobops.cli import main
 
 
@@ -20,6 +21,33 @@ def test_init_and_doctor(tmp_path: Path, capsys):
     doc = json.loads(capsys.readouterr().out)
     assert doc["ok"] is True
     assert doc["checks"]["submit_default_off"] is True
+
+
+def test_ordinary_init_never_creates_authority_credentials(tmp_path: Path, capsys, monkeypatch):
+    """P0-04: jobops init must not install control-plane privilege or authority keys."""
+    home = tmp_path / "init-no-auth"
+    monkeypatch.setenv("JOBOPS_CONTROL_PLANE", "1")
+    monkeypatch.setenv("JOBOPS_HOME", str(home))
+    monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
+    rc = main(
+        [
+            "init",
+            "--workspace",
+            str(home),
+            "--name",
+            "Alex Candidate",
+            "--countries",
+            "Remote",
+        ]
+    )
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is True
+    assert not privilege_path(home).is_file()
+    secrets = home / "secrets"
+    assert not (secrets / "orchestrator_authority.key").is_file()
+    assert not (secrets / "confirmation_hmac.key").is_file()
+    assert not (secrets / "evidence_hmac.key").is_file()
 
 
 def test_preview_is_non_mutating(tmp_path: Path, capsys):
