@@ -114,7 +114,22 @@ CREATE TABLE IF NOT EXISTS approvals (
   decided_at TEXT,
   decided_by TEXT NOT NULL DEFAULT '',
   run_id TEXT,
-  meta_json TEXT NOT NULL DEFAULT '{}'
+  meta_json TEXT NOT NULL DEFAULT '{}',
+  expires_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS user_sessions (
+  session_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  approval_id TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  auth_method TEXT NOT NULL,
+  issued_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  consumed_at TEXT,
+  explicit_action TEXT NOT NULL DEFAULT '',
+  meta_json TEXT NOT NULL DEFAULT '{}',
+  FOREIGN KEY (approval_id) REFERENCES approvals(approval_id)
 );
 
 CREATE TABLE IF NOT EXISTS submission_reservations (
@@ -124,6 +139,7 @@ CREATE TABLE IF NOT EXISTS submission_reservations (
   submit_date TEXT NOT NULL,
   state TEXT NOT NULL,
   created_at TEXT NOT NULL,
+  updated_at TEXT,
   UNIQUE(job_key, submit_date)
 );
 
@@ -134,6 +150,7 @@ CREATE INDEX IF NOT EXISTS idx_task_run ON task_attempts(run_id, stage);
 CREATE INDEX IF NOT EXISTS idx_approvals_job ON approvals(job_key, status);
 CREATE INDEX IF NOT EXISTS idx_approvals_user ON approvals(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_reservations_date ON submission_reservations(submit_date, state);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_approval ON user_sessions(approval_id, user_id);
 """
 
 
@@ -148,7 +165,27 @@ class Ledger:
         self._conn = sqlite3.connect(str(self.db_path), timeout=30)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA_SQL)
+        self._migrate_schema()
         self._conn.commit()
+
+    def _migrate_schema(self) -> None:
+        """Additive migrations for existing ledgers."""
+        cols = {
+            r["name"]
+            for r in self._conn.execute("PRAGMA table_info(approvals)").fetchall()
+        }
+        if "expires_at" not in cols:
+            self._conn.execute("ALTER TABLE approvals ADD COLUMN expires_at TEXT")
+        res_cols = {
+            r["name"]
+            for r in self._conn.execute(
+                "PRAGMA table_info(submission_reservations)"
+            ).fetchall()
+        }
+        if "updated_at" not in res_cols:
+            self._conn.execute(
+                "ALTER TABLE submission_reservations ADD COLUMN updated_at TEXT"
+            )
 
     def close(self) -> None:
         self._conn.close()
@@ -357,13 +394,17 @@ class Ledger:
         decided_by: str = "",
         run_id: Optional[str] = None,
         meta: Optional[Mapping[str, Any]] = None,
+        expires_at: Optional[str] = None,
         require_authority: bool = True,
+        allow_overwrite: bool = False,
     ) -> str:
         """
         Durable approval bound to user, requisition, session, document.
 
         New rows default to ``pending``. Creating ``approved``/``revoked`` directly
         still requires orchestrator authority (prefer ApprovalController.approve).
+        Decided rows are terminal unless ``allow_overwrite`` is explicitly set for
+        test fixtures under orchestrator authority.
         """
         if status not in {"pending", "approved", "revoked"}:
             raise ValueError(f"invalid approval status: {status}")
@@ -371,6 +412,9 @@ class Ledger:
             self._require_approval_authority(
                 action="approve" if status in {"approved", "revoked"} else "record"
             )
+        existing = self.get_approval(approval_id)
+        if existing and existing["status"] in {"approved", "revoked"} and not allow_overwrite:
+            raise PermissionError(f"approval_terminal:{existing['status']}")
         now = _now()
         decided_at = now if status in {"approved", "revoked"} else None
         with self.transaction():
@@ -378,13 +422,15 @@ class Ledger:
                 """
                 INSERT INTO approvals(
                   approval_id, user_id, job_key, session_id, artifact_fingerprint,
-                  document_path, status, created_at, decided_at, decided_by, run_id, meta_json
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                  document_path, status, created_at, decided_at, decided_by, run_id,
+                  meta_json, expires_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(approval_id) DO UPDATE SET
                   status=excluded.status,
                   decided_at=excluded.decided_at,
                   decided_by=excluded.decided_by,
-                  meta_json=excluded.meta_json
+                  meta_json=excluded.meta_json,
+                  expires_at=excluded.expires_at
                 """,
                 (
                     approval_id,
@@ -399,6 +445,7 @@ class Ledger:
                     decided_by,
                     run_id,
                     json.dumps(meta or {}, ensure_ascii=False),
+                    expires_at,
                 ),
             )
             self._conn.execute(
@@ -430,6 +477,7 @@ class Ledger:
         decided_by: str,
         meta: Optional[Mapping[str, Any]] = None,
         require_authority: bool = True,
+        require_pending: bool = True,
     ) -> None:
         """Transition an existing approval (pending → approved/revoked)."""
         if status not in {"approved", "revoked"}:
@@ -439,6 +487,10 @@ class Ledger:
         row = self.get_approval(approval_id)
         if row is None:
             raise KeyError(f"approval_not_found:{approval_id}")
+        if require_pending and row["status"] != "pending":
+            raise PermissionError(f"approval_not_pending:{row['status']}")
+        if row["status"] == "revoked":
+            raise PermissionError("approval_revoked_terminal")
         now = _now()
         merged = dict(row.get("meta") or {})
         if meta:
@@ -476,6 +528,7 @@ class Ledger:
         ).fetchone()
         if not row:
             return None
+        keys = row.keys()
         return {
             "approval_id": row["approval_id"],
             "user_id": row["user_id"],
@@ -489,7 +542,109 @@ class Ledger:
             "decided_by": row["decided_by"] or "",
             "run_id": row["run_id"],
             "meta": json.loads(row["meta_json"] or "{}"),
+            "expires_at": row["expires_at"] if "expires_at" in keys else None,
         }
+
+    def store_user_session(
+        self,
+        *,
+        session_id: str,
+        user_id: str,
+        approval_id: str,
+        token_hash: str,
+        auth_method: str,
+        issued_at: str,
+        expires_at: str,
+        explicit_action: str = "",
+        meta: Optional[Mapping[str, Any]] = None,
+    ) -> str:
+        from trust_boundary import require_orchestrator
+
+        require_orchestrator("approve")
+        with self.transaction():
+            self._conn.execute(
+                """
+                INSERT INTO user_sessions(
+                  session_id, user_id, approval_id, token_hash, auth_method,
+                  issued_at, expires_at, consumed_at, explicit_action, meta_json
+                ) VALUES (?,?,?,?,?,?,?,NULL,?,?)
+                """,
+                (
+                    session_id,
+                    user_id,
+                    approval_id,
+                    token_hash,
+                    auth_method,
+                    issued_at,
+                    expires_at,
+                    explicit_action,
+                    json.dumps(meta or {}, ensure_ascii=False),
+                ),
+            )
+            self._conn.execute(
+                "INSERT INTO audit_events(created_at, run_id, kind, detail_json) VALUES (?,?,?,?)",
+                (
+                    issued_at,
+                    None,
+                    "user_session_issued",
+                    json.dumps(
+                        {
+                            "session_id": session_id,
+                            "user_id": user_id,
+                            "approval_id": approval_id,
+                            "explicit_action": explicit_action,
+                        },
+                        ensure_ascii=False,
+                    ),
+                ),
+            )
+        return session_id
+
+    def get_user_session(self, session_id: str) -> Optional[dict[str, Any]]:
+        row = self._conn.execute(
+            "SELECT * FROM user_sessions WHERE session_id=?",
+            (session_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "session_id": row["session_id"],
+            "user_id": row["user_id"],
+            "approval_id": row["approval_id"],
+            "token_hash": row["token_hash"],
+            "auth_method": row["auth_method"],
+            "issued_at": row["issued_at"],
+            "expires_at": row["expires_at"],
+            "consumed_at": row["consumed_at"],
+            "explicit_action": row["explicit_action"] or "",
+            "meta": json.loads(row["meta_json"] or "{}"),
+        }
+
+    def consume_user_session(self, session_id: str) -> bool:
+        from trust_boundary import require_orchestrator
+
+        require_orchestrator("approve")
+        now = _now()
+        with self.transaction():
+            cur = self._conn.execute(
+                """
+                UPDATE user_sessions SET consumed_at=?
+                WHERE session_id=? AND consumed_at IS NULL
+                """,
+                (now, session_id),
+            )
+            if cur.rowcount != 1:
+                return False
+            self._conn.execute(
+                "INSERT INTO audit_events(created_at, run_id, kind, detail_json) VALUES (?,?,?,?)",
+                (
+                    now,
+                    None,
+                    "user_session_consumed",
+                    json.dumps({"session_id": session_id}, ensure_ascii=False),
+                ),
+            )
+        return True
 
     def require_approved(
         self,
@@ -520,7 +675,7 @@ class Ledger:
         self,
         *,
         submit_date: str,
-        states: tuple[str, ...] = ("reserved", "consumed"),
+        states: tuple[str, ...] = ("reserved", "consumed", "uncertain"),
     ) -> int:
         placeholders = ",".join("?" for _ in states)
         row = self._conn.execute(
@@ -559,8 +714,11 @@ class Ledger:
                 """,
                 (job_key, submit_date),
             ).fetchone()
-            if existing and existing["state"] in {"reserved", "consumed"}:
-                if existing["run_id"] == run_id:
+            if existing and existing["state"] in {"reserved", "consumed", "uncertain"}:
+                if existing["state"] == "uncertain":
+                    self._conn.rollback()
+                    return False, "job_uncertain_no_retry", str(existing["reservation_id"])
+                if existing["run_id"] == run_id and existing["state"] == "reserved":
                     self._conn.commit()
                     return True, "already_reserved", str(existing["reservation_id"])
                 self._conn.rollback()
@@ -568,7 +726,7 @@ class Ledger:
             used = self._conn.execute(
                 """
                 SELECT COUNT(*) AS n FROM submission_reservations
-                WHERE submit_date=? AND state IN ('reserved', 'consumed')
+                WHERE submit_date=? AND state IN ('reserved', 'consumed', 'uncertain')
                 """,
                 (submit_date,),
             ).fetchone()
@@ -580,10 +738,10 @@ class Ledger:
                 self._conn.execute(
                     """
                     UPDATE submission_reservations
-                    SET reservation_id=?, run_id=?, state='reserved', created_at=?
+                    SET reservation_id=?, run_id=?, state='reserved', created_at=?, updated_at=?
                     WHERE job_key=? AND submit_date=?
                     """,
-                    (reservation_id, run_id, now, job_key, submit_date),
+                    (reservation_id, run_id, now, now, job_key, submit_date),
                 )
             else:
                 self._conn.execute(
@@ -620,49 +778,194 @@ class Ledger:
                 pass
             raise
 
+    def get_submission_reservation(
+        self, reservation_id: str
+    ) -> Optional[dict[str, Any]]:
+        row = self._conn.execute(
+            "SELECT * FROM submission_reservations WHERE reservation_id=?",
+            (reservation_id,),
+        ).fetchone()
+        if not row:
+            return None
+        keys = row.keys()
+        return {
+            "reservation_id": row["reservation_id"],
+            "job_key": row["job_key"],
+            "run_id": row["run_id"],
+            "submit_date": row["submit_date"],
+            "state": row["state"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"] if "updated_at" in keys else None,
+        }
+
     def consume_submission_reservation(
-        self, reservation_id: str, *, run_id: Optional[str] = None
+        self,
+        reservation_id: str,
+        *,
+        run_id: Optional[str] = None,
+        job_key: Optional[str] = None,
+        require_authority: bool = True,
     ) -> None:
+        if require_authority:
+            from trust_boundary import require_orchestrator
+
+            require_orchestrator("reserve_submit")
+        row = self.get_submission_reservation(reservation_id)
+        if row is None:
+            raise KeyError(f"reservation_not_found:{reservation_id}")
+        if row["state"] != "reserved":
+            raise PermissionError(f"reservation_not_reserved:{row['state']}")
+        if run_id is not None and row["run_id"] != run_id:
+            raise PermissionError("reservation_run_mismatch")
+        if job_key is not None and row["job_key"] != job_key:
+            raise PermissionError("reservation_job_mismatch")
         now = _now()
         with self.transaction():
-            self._conn.execute(
+            cur = self._conn.execute(
                 """
-                UPDATE submission_reservations SET state='consumed'
+                UPDATE submission_reservations
+                SET state='consumed', updated_at=?
                 WHERE reservation_id=? AND state='reserved'
                 """,
-                (reservation_id,),
+                (now, reservation_id),
             )
+            if cur.rowcount != 1:
+                raise PermissionError("reservation_consume_failed")
             self._conn.execute(
                 "INSERT INTO audit_events(created_at, run_id, kind, detail_json) VALUES (?,?,?,?)",
                 (
                     now,
-                    run_id,
+                    run_id or row["run_id"],
                     "submission_reservation_consumed",
-                    json.dumps({"reservation_id": reservation_id}, ensure_ascii=False),
+                    json.dumps(
+                        {
+                            "reservation_id": reservation_id,
+                            "job_key": row["job_key"],
+                        },
+                        ensure_ascii=False,
+                    ),
                 ),
             )
 
     def release_submission_reservation(
-        self, reservation_id: str, *, run_id: Optional[str] = None
+        self,
+        reservation_id: str,
+        *,
+        run_id: Optional[str] = None,
+        job_key: Optional[str] = None,
+        require_authority: bool = True,
     ) -> None:
+        if require_authority:
+            from trust_boundary import require_orchestrator
+
+            require_orchestrator("reserve_submit")
+        row = self.get_submission_reservation(reservation_id)
+        if row is None:
+            raise KeyError(f"reservation_not_found:{reservation_id}")
+        if row["state"] != "reserved":
+            raise PermissionError(f"reservation_not_reserved:{row['state']}")
+        if run_id is not None and row["run_id"] != run_id:
+            raise PermissionError("reservation_run_mismatch")
+        if job_key is not None and row["job_key"] != job_key:
+            raise PermissionError("reservation_job_mismatch")
+        now = _now()
+        with self.transaction():
+            cur = self._conn.execute(
+                """
+                UPDATE submission_reservations
+                SET state='released', updated_at=?
+                WHERE reservation_id=? AND state='reserved'
+                """,
+                (now, reservation_id),
+            )
+            if cur.rowcount != 1:
+                raise PermissionError("reservation_release_failed")
+            self._conn.execute(
+                "INSERT INTO audit_events(created_at, run_id, kind, detail_json) VALUES (?,?,?,?)",
+                (
+                    now,
+                    run_id or row["run_id"],
+                    "submission_reservation_released",
+                    json.dumps(
+                        {
+                            "reservation_id": reservation_id,
+                            "job_key": row["job_key"],
+                        },
+                        ensure_ascii=False,
+                    ),
+                ),
+            )
+
+    def mark_submission_reservation_uncertain(
+        self,
+        reservation_id: str,
+        *,
+        run_id: Optional[str] = None,
+        job_key: Optional[str] = None,
+        require_authority: bool = True,
+    ) -> None:
+        """Mark a reserved slot uncertain after ambiguous portal outcome (no retry)."""
+        if require_authority:
+            from trust_boundary import require_orchestrator
+
+            require_orchestrator("reserve_submit")
+        row = self.get_submission_reservation(reservation_id)
+        if row is None:
+            raise KeyError(f"reservation_not_found:{reservation_id}")
+        if row["state"] not in {"reserved", "uncertain"}:
+            raise PermissionError(f"reservation_not_markable_uncertain:{row['state']}")
+        if run_id is not None and row["run_id"] != run_id:
+            raise PermissionError("reservation_run_mismatch")
+        if job_key is not None and row["job_key"] != job_key:
+            raise PermissionError("reservation_job_mismatch")
         now = _now()
         with self.transaction():
             self._conn.execute(
                 """
-                UPDATE submission_reservations SET state='released'
-                WHERE reservation_id=? AND state='reserved'
+                UPDATE submission_reservations
+                SET state='uncertain', updated_at=?
+                WHERE reservation_id=?
                 """,
-                (reservation_id,),
+                (now, reservation_id),
             )
             self._conn.execute(
                 "INSERT INTO audit_events(created_at, run_id, kind, detail_json) VALUES (?,?,?,?)",
                 (
                     now,
-                    run_id,
-                    "submission_reservation_released",
-                    json.dumps({"reservation_id": reservation_id}, ensure_ascii=False),
+                    run_id or row["run_id"],
+                    "submission_reservation_uncertain",
+                    json.dumps(
+                        {
+                            "reservation_id": reservation_id,
+                            "job_key": row["job_key"],
+                        },
+                        ensure_ascii=False,
+                    ),
                 ),
             )
+
+    def has_uncertain_reservation(
+        self, *, job_key: str, submit_date: Optional[str] = None
+    ) -> bool:
+        if submit_date:
+            row = self._conn.execute(
+                """
+                SELECT 1 AS ok FROM submission_reservations
+                WHERE job_key=? AND submit_date=? AND state='uncertain'
+                LIMIT 1
+                """,
+                (job_key, submit_date),
+            ).fetchone()
+        else:
+            row = self._conn.execute(
+                """
+                SELECT 1 AS ok FROM submission_reservations
+                WHERE job_key=? AND state='uncertain'
+                LIMIT 1
+                """,
+                (job_key,),
+            ).fetchone()
+        return row is not None
 
     def append_artifact(self, envelope: Mapping[str, Any]) -> bool:
         """Insert enveloped artifact. Returns False if idempotent duplicate."""
