@@ -207,7 +207,9 @@ class AgentRuntime:
         # Fail closed when FS/process/network/tool restrictions cannot be enforced
         # outside prompts (third-party CLIs). Deterministic path is exempt.
         try:
-            sandbox_mode = require_enforceable_restrictions(self.provider)
+            sandbox_mode = require_enforceable_restrictions(
+                self.provider, role=req.role
+            )
         except SandboxViolation as exc:
             broker.close()
             return InvokeResult(

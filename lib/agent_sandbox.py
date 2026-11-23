@@ -128,17 +128,25 @@ def require_enforceable_restrictions(
     provider: str,
     *,
     environ: Optional[Mapping[str, str]] = None,
+    role: str = "",
 ) -> str:
     """
     Fail closed when spawning an agent whose filesystem/process/network/tool
     restrictions cannot be enforced outside prompts.
 
-    Operators may set JOBOPS_ALLOW_UNSANDBOXED_AGENT=1 to opt into residual risk
-    (minimal env + ToolBroker still apply; OS sandbox still unsupported).
+    Sensitive production workflows (frontier_submit / outreach) never allow the
+    unsandboxed opt-in. Other roles may set JOBOPS_ALLOW_UNSANDBOXED_AGENT=1 to
+    acknowledge residual risk (minimal env + ToolBroker still apply; OS sandbox
+    still unsupported).
     """
     env = environ if environ is not None else os.environ
     if provider_supports_native_tool_restrictions(provider):
         return "deterministic"
+    sensitive = role in {"frontier_submit", "outreach"}
+    if sensitive and (env.get("JOBOPS_ALLOW_UNSANDBOXED_AGENT") or "0") == "1":
+        raise SandboxViolation(
+            f"unsandboxed_forbidden_for_sensitive_role:{role}"
+        )
     if (env.get("JOBOPS_ALLOW_UNSANDBOXED_AGENT") or "0") == "1":
         return "unsandboxed_opt_in"
     if (env.get("JOBOPS_REQUIRE_OS_SANDBOX") or "0") == "1":

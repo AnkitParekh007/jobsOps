@@ -21,7 +21,7 @@ from submission_authorize import (
     fingerprint_bytes,
     record_submission_outcome,
 )
-from trust_boundary import OrchestratorContext
+from trust_boundary import open_orchestrator
 
 SECRET = b"jobops-mock-portal-e2e-secret"
 USER = "user-mock"
@@ -47,10 +47,12 @@ def test_mock_portal_happy_path_authorize_and_receipt(tmp_path: Path, monkeypatc
     url = "https://jobs.ashbyhq.com/acme/mock-portal-1"
     job_key = f"url:{url}"
 
+    home = tmp_path / "jobops-home"
+    home.mkdir()
     led = Ledger(tmp_path / "mock.db")
     led.start_run("mock-e2e", floor=40, phase="authorize")
     acquire_form_lock(led, canonical_url=url, run_id="mock-e2e")
-    with OrchestratorContext(principal="pytest"):
+    with open_orchestrator(home, principal="pytest"):
         led.record_approval(
             approval_id=APPROVAL,
             user_id=USER,
@@ -98,6 +100,9 @@ def test_mock_portal_happy_path_authorize_and_receipt(tmp_path: Path, monkeypatc
     assert result.authorized is True
     assert result.state == STATE_SUBMISSION_AUTHORIZED
 
+    res_id = (result.package.get("daily_cap") or {}).get("reservation_id") or (
+        (result.package.get("evidence_package") or {}).get("reservation_id")
+    )
     receipt = record_submission_outcome(
         job_key=job_key,
         canonical_url=url,
@@ -108,6 +113,7 @@ def test_mock_portal_happy_path_authorize_and_receipt(tmp_path: Path, monkeypatc
         gmail_message_id="msg-mock-1",
         pdf_fingerprint=fp,
         ledger=led,
+        reservation_id=res_id,
     )
     assert receipt["outcome"] == "Applied"
     led.close()

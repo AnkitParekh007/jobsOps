@@ -124,9 +124,11 @@ def test_form_lock_held_can_authorize(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("JOBOPS_EVIDENCE_SECRET", TEST_SECRET.decode())
     monkeypatch.setenv("JOBOPS_ALLOW_FIXTURE_EVIDENCE", "1")
     ev = data["evidence_package"]
-    from trust_boundary import OrchestratorContext
+    from trust_boundary import open_orchestrator
 
-    with OrchestratorContext(principal="pytest"):
+    home = tmp_path / "jobops-home"
+    home.mkdir(exist_ok=True)
+    with open_orchestrator(home, principal="pytest"):
         led.record_approval(
             approval_id=str(ev["approval_id"]),
             user_id=str(ev["user_id"]),
@@ -136,16 +138,16 @@ def test_form_lock_held_can_authorize(tmp_path: Path, monkeypatch):
             status="approved",
             run_id="e08-lock",
         )
-    result = authorize_submission(
-        data,
-        run_id="e08-lock",
-        dry_run=False,
-        require_form_lock=True,
-        submits_today=0,
-        ledger=led,
-        identity_markers=["alex", "candidate"],
-        consent_auto_submit=True,
-    )
+        result = authorize_submission(
+            data,
+            run_id="e08-lock",
+            dry_run=False,
+            require_form_lock=True,
+            submits_today=0,
+            ledger=led,
+            identity_markers=["alex", "candidate"],
+            consent_auto_submit=True,
+        )
     assert result.authorized is True
     assert result.state == STATE_SUBMISSION_AUTHORIZED
     led.close()

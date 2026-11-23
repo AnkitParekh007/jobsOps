@@ -76,9 +76,11 @@ def _authorize(pkg: dict, tmp_path: Path, monkeypatch) -> object:
     acquire_form_lock(led, canonical_url=pkg["canonical_url"], run_id="forge-1")
     # Durable approval bound to user/job/session/document — required for consent.
     evidence = pkg.get("evidence_package") or {}
-    from trust_boundary import OrchestratorContext
+    from trust_boundary import open_orchestrator
 
-    with OrchestratorContext(principal="pytest"):
+    home = tmp_path / "jobops-home"
+    home.mkdir(exist_ok=True)
+    with open_orchestrator(home, principal="pytest"):
         led.record_approval(
             approval_id=str(evidence.get("approval_id") or APPROVAL),
             user_id=str(evidence.get("user_id") or USER),
@@ -88,16 +90,16 @@ def _authorize(pkg: dict, tmp_path: Path, monkeypatch) -> object:
             status="approved",
             run_id="forge-1",
         )
-    result = authorize_submission(
-        pkg,
-        run_id="forge-1",
-        ledger=led,
-        dry_run=False,
-        require_form_lock=True,
-        submits_today=0,
-        identity_markers=["alex", "candidate"],
-        consent_auto_submit=True,
-    )
+        result = authorize_submission(
+            pkg,
+            run_id="forge-1",
+            ledger=led,
+            dry_run=False,
+            require_form_lock=True,
+            submits_today=0,
+            identity_markers=["alex", "candidate"],
+            consent_auto_submit=True,
+        )
     led.close()
     return result
 

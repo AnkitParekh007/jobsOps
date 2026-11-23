@@ -7,7 +7,7 @@ PDF fixtures, mock ATS journey, and outbound HTTP policy.
 """
 from __future__ import annotations
 
-import concurrent.futures
+import multiprocessing as mp
 import os
 import subprocess
 import sys
@@ -17,7 +17,18 @@ import pytest
 
 from agent_runtime import CursorAgentRuntime, DeterministicRuntime, InvokeRequest
 from agent_sandbox import AgentSandbox, SandboxViolation, require_enforceable_restrictions
-from approval_controller import ApprovalAuthError, ApprovalController, mint_user_session
+from approval_controller import (
+    ApprovalAuthError,
+    ApprovalController,
+    UserSession,
+    mint_user_session,
+)
+from authority import (
+    AuthorityError,
+    ControlPlaneController,
+    bootstrap_control_plane,
+    reset_control_plane_for_tests,
+)
 from evidence_issuer import EvidenceIssuanceError, TrustedEvidenceIssuer
 from ledger import Ledger
 from mock_ats_portal import MockAtsError, MockAtsPortal
@@ -26,9 +37,11 @@ from submission_authorize import extract_pdf_text, reserve_daily_submission
 from tool_broker import ToolBroker
 from trust_boundary import (
     OrchestratorContext,
+    assert_agent_env_isolated,
     assert_env_has_no_secrets,
     build_agent_subprocess_env,
     is_secret_env_key,
+    open_orchestrator,
 )
 from url_safety import safe_http_fetch
 from verify_jobs import http_fetch
@@ -41,6 +54,8 @@ def test_agent_subprocess_env_strips_secrets(monkeypatch):
     monkeypatch.setenv("JOBOPS_APPROVAL_TOKEN", "approval-secret-value")
     monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/tmp/creds.json")
     monkeypatch.setenv("JOBOPS_CONNECTOR_TOKEN_SHEETS", "sheets-tok")
+    monkeypatch.setenv("JOBOPS_HOME", "/tmp/secret-home")
+    monkeypatch.setenv("PYTHONPATH", "/tmp/evil-path")
     env = build_agent_subprocess_env(
         role="discovery",
         allowed_tools=["http_fetch", "read_file"],
@@ -50,10 +65,13 @@ def test_agent_subprocess_env_strips_secrets(monkeypatch):
         extra={"JOBOPS_EVIDENCE_SECRET": "inject-me", "PATH": os.environ.get("PATH", "")},
     )
     assert_env_has_no_secrets(env)
+    assert_agent_env_isolated(env)
     assert "JOBOPS_EVIDENCE_SECRET" not in env
     assert "JOBOPS_APPROVAL_TOKEN" not in env
     assert "GOOGLE_APPLICATION_CREDENTIALS" not in env
     assert "JOBOPS_CONNECTOR_TOKEN_SHEETS" not in env
+    assert "JOBOPS_HOME" not in env
+    assert "PYTHONPATH" not in env
     assert env["JOBOPS_AGENT_ROLE"] == "discovery"
     assert "http_fetch" in env["JOBOPS_ALLOWED_TOOLS"]
     assert is_secret_env_key("JOBOPS_HMAC_KEY")
@@ -107,6 +125,21 @@ def test_cursor_invoke_fails_closed_without_unsandboxed_opt_in(tmp_path: Path, m
     assert "sandbox_fail_closed" in result.message
 
 
+def test_unsandboxed_opt_in_forbidden_for_sensitive_roles():
+    with pytest.raises(SandboxViolation, match="unsandboxed_forbidden_for_sensitive_role"):
+        require_enforceable_restrictions(
+            "cursor",
+            role="frontier_submit",
+            environ={"JOBOPS_ALLOW_UNSANDBOXED_AGENT": "1"},
+        )
+    with pytest.raises(SandboxViolation, match="unsandboxed_forbidden_for_sensitive_role"):
+        require_enforceable_restrictions(
+            "claude_code",
+            role="outreach",
+            environ={"JOBOPS_ALLOW_UNSANDBOXED_AGENT": "1"},
+        )
+
+
 def test_deterministic_invoke_still_works(tmp_path: Path):
     prompt = tmp_path / "p.md"
     prompt.write_text("x", encoding="utf-8")
@@ -149,11 +182,11 @@ def test_sandbox_blocks_path_escape_network_and_spawn(tmp_path: Path):
     broker.close()
 
 
-def test_approval_controller_pending_then_authenticated_approve(tmp_path: Path, monkeypatch):
+def test_approval_controller_pending_then_authenticated_approve(jobops_home: Path, monkeypatch):
     monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
-    led = Ledger(tmp_path / "appr.db")
+    led = Ledger(jobops_home / "state" / "appr.db")
     led.start_run("appr-1", floor=40)
-    with OrchestratorContext(principal="pytest"):
+    with open_orchestrator(jobops_home, principal="pytest"):
         ctl = ApprovalController(led)
         ctl.request_approval(
             approval_id="a1",
@@ -168,20 +201,30 @@ def test_approval_controller_pending_then_authenticated_approve(tmp_path: Path, 
         assert row is not None
         assert row["status"] == "pending"
 
-        session = mint_user_session("user-1")
-        decided = ctl.approve(approval_id="a1", user_session=session)
+        session = mint_user_session(
+            "user-1",
+            approval_id="a1",
+            ledger=led,
+            explicit_user_action=True,
+        )
+        decided = ctl.approve(
+            approval_id="a1",
+            user_session=session,
+            expected_job_key="job:1",
+            expected_session_id="sess-1",
+            expected_fingerprint="f" * 64,
+        )
         assert decided["status"] == "approved"
         assert decided["decided_by"].startswith("user:")
     led.close()
 
 
-def test_agent_cannot_approve_or_create_approved_row(tmp_path: Path, monkeypatch):
+def test_agent_cannot_approve_or_create_approved_row(jobops_home: Path, monkeypatch):
     monkeypatch.setenv("JOBOPS_AGENT_ROLE", "frontier_submit")
-    led = Ledger(tmp_path / "agent-appr.db")
+    led = Ledger(jobops_home / "state" / "agent-appr.db")
     led.start_run("agent-1", floor=40)
-    with pytest.raises(PermissionError):
-        with OrchestratorContext(principal="evil-agent"):
-            pass
+    with pytest.raises((PermissionError, AuthorityError)):
+        bootstrap_control_plane(jobops_home)
     with pytest.raises(PermissionError):
         led.record_approval(
             approval_id="evil",
@@ -194,22 +237,92 @@ def test_agent_cannot_approve_or_create_approved_row(tmp_path: Path, monkeypatch
     led.close()
 
 
-def test_agent_cannot_mint_evidence_even_after_clearing_role(tmp_path: Path, monkeypatch):
-    """Issuance requires OrchestratorContext — unsetting JOBOPS_AGENT_ROLE is not enough."""
+def test_clearing_agent_role_cannot_grant_authority(jobops_home: Path, monkeypatch):
+    """P0-02: clearing JOBOPS_AGENT_ROLE after contamination cannot mint authority."""
+    reset_control_plane_for_tests()
+    monkeypatch.setenv("JOBOPS_AGENT_ROLE", "discovery")
+    with pytest.raises(AuthorityError, match="agent"):
+        bootstrap_control_plane(jobops_home)
+    monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
+    # Contamination persists — clearing the env var is not enough.
+    with pytest.raises(AuthorityError, match="contamination"):
+        bootstrap_control_plane(jobops_home)
+    with pytest.raises(AuthorityError, match="contamination|agent"):
+        ControlPlaneController(jobops_home)
+
+
+def test_agent_subprocess_clearing_role_cannot_open_orchestrator(
+    jobops_home: Path, monkeypatch
+):
+    """Cross-process: agent child that clears JOBOPS_AGENT_ROLE still lacks authority."""
+    reset_control_plane_for_tests()
+    bootstrap_control_plane(jobops_home)
+    key_path = jobops_home / "secrets" / "orchestrator_authority.key"
+    assert key_path.is_file()
+
+    env = build_agent_subprocess_env(
+        role="discovery",
+        allowed_tools=["read_file"],
+        parent_env=os.environ,
+    )
+    # Even if the child learns the key path, JOBOPS_HOME is stripped.
+    script = f"""
+import os, sys
+sys.path.insert(0, {str(Path(__file__).resolve().parent.parent / 'lib')!r})
+# Adversary clears the role and even tries to forge control-plane enablement.
+os.environ.pop('JOBOPS_AGENT_ROLE', None)
+os.environ['JOBOPS_CONTROL_PLANE'] = '1'
+from authority import bootstrap_control_plane, note_agent_role
+from trust_boundary import open_orchestrator
+# Role was present at process start via env; mark contamination as runtime would.
+note_agent_role('discovery')
+home = {str(jobops_home)!r}
+try:
+    bootstrap_control_plane(home)
+    print('BOOTSTRAP_OK')
+    sys.exit(11)
+except Exception as exc:
+    print('bootstrap_blocked', type(exc).__name__, exc)
+try:
+    # Clearing role still leaves contamination.
+    os.environ.pop('JOBOPS_AGENT_ROLE', None)
+    with open_orchestrator(home):
+        print('OPEN_OK')
+        sys.exit(12)
+except Exception as exc:
+    print('open_blocked', type(exc).__name__, exc)
+sys.exit(0)
+"""
+    proc = subprocess.run(
+        [sys.executable, "-c", script],
+        env=env,
+        cwd=str(jobops_home),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert "BOOTSTRAP_OK" not in proc.stdout
+    assert "OPEN_OK" not in proc.stdout
+
+
+def test_agent_cannot_mint_evidence_even_after_clearing_role(jobops_home: Path, monkeypatch):
+    """Issuance requires verified OrchestratorContext — unsetting JOBOPS_AGENT_ROLE is not enough."""
     monkeypatch.setenv("JOBOPS_EVIDENCE_SECRET", SECRET.decode())
     monkeypatch.setenv("JOBOPS_AGENT_ROLE", "discovery")
-    led = Ledger(tmp_path / "mint.db")
+    led = Ledger(jobops_home / "state" / "mint.db")
     led.start_run("mint-1", floor=40)
 
     with pytest.raises(EvidenceIssuanceError, match="forbidden_in_agent_role"):
         TrustedEvidenceIssuer(led, secret=SECRET)
 
     monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
-    # No orchestrator context → still refused.
+    # Contaminated process still cannot bootstrap / issue.
     with pytest.raises(EvidenceIssuanceError, match="orchestrator_context_required"):
         TrustedEvidenceIssuer(led, secret=SECRET)
 
-    with OrchestratorContext(principal="pytest"):
+    reset_control_plane_for_tests()
+    with open_orchestrator(jobops_home, principal="pytest"):
         led.record_approval(
             approval_id="ok",
             user_id="u",
@@ -217,6 +330,7 @@ def test_agent_cannot_mint_evidence_even_after_clearing_role(tmp_path: Path, mon
             session_id="s",
             artifact_fingerprint="a" * 64,
             status="approved",
+            allow_overwrite=True,
         )
         issuer = TrustedEvidenceIssuer(led, secret=SECRET)
         rec = issuer.issue_claim(
@@ -231,12 +345,12 @@ def test_agent_cannot_mint_evidence_even_after_clearing_role(tmp_path: Path, mon
     led.close()
 
 
-def test_pending_approval_cannot_issue_evidence(tmp_path: Path, monkeypatch):
+def test_pending_approval_cannot_issue_evidence(jobops_home: Path, monkeypatch):
     monkeypatch.setenv("JOBOPS_EVIDENCE_SECRET", SECRET.decode())
     monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
-    led = Ledger(tmp_path / "pend.db")
+    led = Ledger(jobops_home / "state" / "pend.db")
     led.start_run("pend-1", floor=40)
-    with OrchestratorContext(principal="pytest"):
+    with open_orchestrator(jobops_home, principal="pytest"):
         ctl = ApprovalController(led)
         ctl.request_approval(
             approval_id="pend",
@@ -258,14 +372,14 @@ def test_pending_approval_cannot_issue_evidence(tmp_path: Path, monkeypatch):
     led.close()
 
 
-def test_atomic_submission_reservations_enforce_daily_cap(tmp_path: Path, monkeypatch):
-    monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
-    db = tmp_path / "res.db"
-    today = "2099-01-15"
-
-    def attempt(i: int) -> tuple[bool, str]:
-        led = Ledger(db)
-        with OrchestratorContext(principal=f"worker-{i}"):
+def _reserve_cap_worker(args: tuple) -> tuple[bool, str]:
+    db, home, i, today = args
+    os.environ["JOBOPS_CONTROL_PLANE"] = "1"
+    os.environ.pop("JOBOPS_AGENT_ROLE", None)
+    reset_control_plane_for_tests()
+    led = Ledger(db)
+    try:
+        with open_orchestrator(Path(home), principal=f"worker-{i}"):
             ok, reason, _rid = reserve_daily_submission(
                 led,
                 job_key=f"job:{i}",
@@ -274,11 +388,24 @@ def test_atomic_submission_reservations_enforce_daily_cap(tmp_path: Path, monkey
                 submit_date=today,
                 reservation_id=f"res-{i}",
             )
-        led.close()
         return ok, reason
+    finally:
+        led.close()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-        results = list(pool.map(attempt, range(8)))
+
+def test_atomic_submission_reservations_enforce_daily_cap(jobops_home: Path, monkeypatch):
+    monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
+    monkeypatch.setenv("JOBOPS_CONTROL_PLANE", "1")
+    db = str(jobops_home / "state" / "res.db")
+    home = str(jobops_home)
+    today = "2099-01-15"
+    Ledger(db).close()
+
+    with mp.get_context("spawn").Pool(processes=4) as pool:
+        results = pool.map(
+            _reserve_cap_worker,
+            [(db, home, i, today) for i in range(8)],
+        )
     successes = [r for r in results if r[0]]
     failures = [r for r in results if not r[0]]
     assert len(successes) == 1
@@ -350,11 +477,11 @@ def test_outbound_http_paths_share_url_safety_policy():
     assert "ssrf_blocked" in b1 and "ssrf_blocked" in b2
 
 
-def test_approval_controller_rejects_wrong_user(tmp_path: Path, monkeypatch):
+def test_approval_controller_rejects_wrong_user(jobops_home: Path, monkeypatch):
     monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
-    led = Ledger(tmp_path / "wrong.db")
+    led = Ledger(jobops_home / "state" / "wrong.db")
     led.start_run("w1", floor=40)
-    with OrchestratorContext(principal="pytest"):
+    with open_orchestrator(jobops_home, principal="pytest"):
         ctl = ApprovalController(led)
         ctl.request_approval(
             approval_id="w",
@@ -363,7 +490,97 @@ def test_approval_controller_rejects_wrong_user(tmp_path: Path, monkeypatch):
             session_id="s",
             artifact_fingerprint="c" * 64,
         )
-        other = mint_user_session("intruder")
-        with pytest.raises(ApprovalAuthError, match="user_mismatch"):
-            ctl.approve(approval_id="w", user_session=other)
+        with pytest.raises(ApprovalAuthError, match="user_mismatch|user_id"):
+            mint_user_session(
+                "intruder",
+                approval_id="w",
+                ledger=led,
+                explicit_user_action=True,
+            )
     led.close()
+
+
+def test_fabricated_session_and_replay_rejected(jobops_home: Path, monkeypatch):
+    monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
+    led = Ledger(jobops_home / "state" / "forge.db")
+    led.start_run("forge-1", floor=40)
+    with open_orchestrator(jobops_home, principal="pytest"):
+        ctl = ApprovalController(led)
+        ctl.request_approval(
+            approval_id="f1",
+            user_id="owner",
+            job_key="job:f",
+            session_id="sess-f",
+            artifact_fingerprint="d" * 64,
+        )
+        forged = UserSession(
+            user_id="owner",
+            session_token="x" * 32,
+            session_id="usess_forged",
+            approval_id="f1",
+        )
+        with pytest.raises(ApprovalAuthError, match="not_found|mismatch|token"):
+            ctl.approve(
+                approval_id="f1",
+                user_session=forged,
+                expected_job_key="job:f",
+                expected_session_id="sess-f",
+                expected_fingerprint="d" * 64,
+            )
+        session = mint_user_session(
+            "owner",
+            approval_id="f1",
+            ledger=led,
+            explicit_user_action=True,
+        )
+        decided = ctl.approve(
+            approval_id="f1",
+            user_session=session,
+            expected_job_key="job:f",
+            expected_session_id="sess-f",
+            expected_fingerprint="d" * 64,
+        )
+        assert decided["status"] == "approved"
+        # Replay with same session token must fail (consumed).
+        with pytest.raises(ApprovalAuthError, match="consumed|not_pending"):
+            ctl.approve(
+                approval_id="f1",
+                user_session=session,
+                expected_job_key="job:f",
+                expected_session_id="sess-f",
+                expected_fingerprint="d" * 64,
+            )
+    led.close()
+
+
+def test_explicit_user_action_required_for_session(jobops_home: Path, monkeypatch):
+    monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
+    led = Ledger(jobops_home / "state" / "explicit.db")
+    led.start_run("ex-1", floor=40)
+    with open_orchestrator(jobops_home, principal="pytest"):
+        ctl = ApprovalController(led)
+        ctl.request_approval(
+            approval_id="e1",
+            user_id="owner",
+            job_key="j",
+            session_id="s",
+            artifact_fingerprint="e" * 64,
+        )
+        with pytest.raises(ApprovalAuthError, match="explicit_user_action_required"):
+            mint_user_session(
+                "owner",
+                approval_id="e1",
+                ledger=led,
+                explicit_user_action=False,
+            )
+    led.close()
+
+
+def test_direct_orchestrator_context_requires_grant(jobops_home: Path, monkeypatch):
+    """Negative: OrchestratorContext cannot be opened without a verified grant."""
+    monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
+    reset_control_plane_for_tests()
+    with pytest.raises(TypeError):
+        # Missing required grant/workspace_home kwargs.
+        with OrchestratorContext(principal="evil"):  # type: ignore[call-arg]
+            pass

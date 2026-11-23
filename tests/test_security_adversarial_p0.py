@@ -90,14 +90,16 @@ def test_authorize_fail_closed_without_secret(monkeypatch, tmp_path: Path):
 
 
 def test_evidence_issuer_requires_durable_approval(tmp_path: Path, monkeypatch):
-    from trust_boundary import OrchestratorContext
+    from trust_boundary import open_orchestrator
 
     monkeypatch.setenv("JOBOPS_EVIDENCE_SECRET", SECRET.decode())
     monkeypatch.delenv("JOBOPS_AGENT_ROLE", raising=False)
     led = Ledger(tmp_path / "iss.db")
     led.start_run("iss-1", floor=40)
 
-    with OrchestratorContext(principal="pytest"):
+    home = tmp_path / "jobops-home"
+    home.mkdir(exist_ok=True)
+    with open_orchestrator(home, principal="pytest"):
         issuer = TrustedEvidenceIssuer(led, secret=SECRET)
         with pytest.raises(EvidenceIssuanceError, match="approval_not_found"):
             issuer.issue_claim(

@@ -886,7 +886,15 @@ def authorize_submission(
     jk = str(package_input.get("job_key") or job_key_from_url(canon))
 
     # Hard rule: never retry uncertain without Phase 4 reconcile
-    if prior_uncertain or package_input.get("state") == STATE_UNCERTAIN:
+    ledger_uncertain = bool(
+        ledger is not None and ledger.has_uncertain_reservation(job_key=jk)
+    )
+    if prior_uncertain or package_input.get("state") == STATE_UNCERTAIN or ledger_uncertain:
+        reason = (
+            "submission_reservation:job_uncertain_no_retry"
+            if ledger_uncertain
+            else "prior_submission_uncertain_no_auto_retry"
+        )
         pkg = build_application_package(
             job_key=jk,
             canonical_url=canon,
@@ -897,7 +905,7 @@ def authorize_submission(
             pdf_fingerprint=str(package_input.get("pdf_fingerprint") or "none"),
             fingerprint_method=str(package_input.get("fingerprint_method") or "fixture"),
             checklist=default_checklist(),
-            blocking_reasons=["prior_submission_uncertain_no_auto_retry"],
+            blocking_reasons=[reason],
             organization=str(package_input.get("organization") or ""),
             role=str(package_input.get("role") or ""),
             pdf_path=package_input.get("pdf_path"),
@@ -910,7 +918,7 @@ def authorize_submission(
             STATE_UNCERTAIN,
             SOP_STATUS_MAP[STATE_UNCERTAIN],
             pkg,
-            blocking_reasons=["prior_submission_uncertain_no_auto_retry"],
+            blocking_reasons=[reason],
             code="no_auto_retry_uncertain",
             message="SubmissionUncertain cannot auto-retry",
         )
@@ -1393,55 +1401,159 @@ def authorize_submission(
         )
 
     reservation_meta: dict[str, Any] = {}
-    if ledger is not None and not dry_run:
-        # Atomic cross-process reservation when orchestrator context is active.
+    if not dry_run:
+        # Successful authorization always requires a valid atomic reservation.
         from trust_boundary import current_orchestrator
 
-        if current_orchestrator() is not None:
-            ok_res, res_reason, res_id = reserve_daily_submission(
-                ledger, job_key=jk, run_id=run_id, cap=DAILY_SUBMIT_CAP
+        if ledger is None:
+            blocking.append("submission_reservation:ledger_required")
+            pkg = build_application_package(
+                job_key=jk,
+                canonical_url=canon,
+                run_id=run_id,
+                state=STATE_READY_FOR_APPROVAL,
+                ats_score=ats,
+                quality_score=quality,
+                pdf_fingerprint=fingerprint,
+                fingerprint_method=method,
+                checklist=checklist,
+                blocking_reasons=blocking,
+                organization=str(package_input.get("organization") or ""),
+                role=str(package_input.get("role") or ""),
+                pdf_path=str(pdf_path) if pdf_path else None,
+                ats_score_fingerprint=ats_fp_s,
+                quality_score_fingerprint=qual_fp_s,
+                extracted_text=extracted,
+                session_lock=lock_info,
+                daily_cap=daily_cap_info,
+                evidence_package=evidence,
+                notes="reservation unavailable — ledger required for authorize",
+                retryable=True,
+                policy_version=policy_version,
             )
-            reservation_meta = {
-                "reservation_ok": ok_res,
-                "reservation_reason": res_reason,
-                "reservation_id": res_id,
-            }
-            if not ok_res:
-                blocking.append(f"submission_reservation:{res_reason}")
-                daily_cap_info = {**daily_cap_info, **reservation_meta}
-                pkg = build_application_package(
-                    job_key=jk,
-                    canonical_url=canon,
-                    run_id=run_id,
-                    state=STATE_READY_FOR_APPROVAL,
-                    ats_score=ats,
-                    quality_score=quality,
-                    pdf_fingerprint=fingerprint,
-                    fingerprint_method=method,
-                    checklist=checklist,
-                    blocking_reasons=blocking,
-                    organization=str(package_input.get("organization") or ""),
-                    role=str(package_input.get("role") or ""),
-                    pdf_path=str(pdf_path) if pdf_path else None,
-                    ats_score_fingerprint=ats_fp_s,
-                    quality_score_fingerprint=qual_fp_s,
-                    extracted_text=extracted,
-                    session_lock=lock_info,
-                    daily_cap=daily_cap_info,
-                    evidence_package=evidence,
-                    notes="daily reservation refused — concurrent cap",
-                    retryable=True,
-                    policy_version=policy_version,
-                )
-                return AuthorizeResult(
-                    False,
-                    STATE_READY_FOR_APPROVAL,
-                    SOP_STATUS_MAP[STATE_READY_FOR_APPROVAL],
-                    pkg,
-                    blocking,
-                    "daily_submit_cap",
-                    res_reason,
-                )
+            return AuthorizeResult(
+                False,
+                STATE_READY_FOR_APPROVAL,
+                SOP_STATUS_MAP[STATE_READY_FOR_APPROVAL],
+                pkg,
+                blocking,
+                "reservation_unavailable",
+                "ledger_required",
+            )
+        if current_orchestrator() is None:
+            blocking.append("submission_reservation:orchestrator_required")
+            pkg = build_application_package(
+                job_key=jk,
+                canonical_url=canon,
+                run_id=run_id,
+                state=STATE_READY_FOR_APPROVAL,
+                ats_score=ats,
+                quality_score=quality,
+                pdf_fingerprint=fingerprint,
+                fingerprint_method=method,
+                checklist=checklist,
+                blocking_reasons=blocking,
+                organization=str(package_input.get("organization") or ""),
+                role=str(package_input.get("role") or ""),
+                pdf_path=str(pdf_path) if pdf_path else None,
+                ats_score_fingerprint=ats_fp_s,
+                quality_score_fingerprint=qual_fp_s,
+                extracted_text=extracted,
+                session_lock=lock_info,
+                daily_cap=daily_cap_info,
+                evidence_package=evidence,
+                notes="reservation unavailable — orchestrator context required",
+                retryable=True,
+                policy_version=policy_version,
+            )
+            return AuthorizeResult(
+                False,
+                STATE_READY_FOR_APPROVAL,
+                SOP_STATUS_MAP[STATE_READY_FOR_APPROVAL],
+                pkg,
+                blocking,
+                "reservation_unavailable",
+                "orchestrator_required",
+            )
+        if ledger.has_uncertain_reservation(job_key=jk):
+            blocking.append("submission_reservation:job_uncertain_no_retry")
+            pkg = build_application_package(
+                job_key=jk,
+                canonical_url=canon,
+                run_id=run_id,
+                state=STATE_UNCERTAIN,
+                ats_score=ats,
+                quality_score=quality,
+                pdf_fingerprint=fingerprint,
+                fingerprint_method=method,
+                checklist=checklist,
+                blocking_reasons=blocking,
+                organization=str(package_input.get("organization") or ""),
+                role=str(package_input.get("role") or ""),
+                pdf_path=str(pdf_path) if pdf_path else None,
+                ats_score_fingerprint=ats_fp_s,
+                quality_score_fingerprint=qual_fp_s,
+                extracted_text=extracted,
+                session_lock=lock_info,
+                daily_cap=daily_cap_info,
+                evidence_package=evidence,
+                notes="prior uncertain reservation — no retry",
+                retryable=False,
+                policy_version=policy_version,
+            )
+            return AuthorizeResult(
+                False,
+                STATE_UNCERTAIN,
+                SOP_STATUS_MAP[STATE_UNCERTAIN],
+                pkg,
+                blocking,
+                "submission_uncertain",
+                "job_uncertain_no_retry",
+            )
+        ok_res, res_reason, res_id = reserve_daily_submission(
+            ledger, job_key=jk, run_id=run_id, cap=DAILY_SUBMIT_CAP
+        )
+        reservation_meta = {
+            "reservation_ok": ok_res,
+            "reservation_reason": res_reason,
+            "reservation_id": res_id,
+        }
+        if not ok_res:
+            blocking.append(f"submission_reservation:{res_reason}")
+            daily_cap_info = {**daily_cap_info, **reservation_meta}
+            pkg = build_application_package(
+                job_key=jk,
+                canonical_url=canon,
+                run_id=run_id,
+                state=STATE_READY_FOR_APPROVAL,
+                ats_score=ats,
+                quality_score=quality,
+                pdf_fingerprint=fingerprint,
+                fingerprint_method=method,
+                checklist=checklist,
+                blocking_reasons=blocking,
+                organization=str(package_input.get("organization") or ""),
+                role=str(package_input.get("role") or ""),
+                pdf_path=str(pdf_path) if pdf_path else None,
+                ats_score_fingerprint=ats_fp_s,
+                quality_score_fingerprint=qual_fp_s,
+                extracted_text=extracted,
+                session_lock=lock_info,
+                daily_cap=daily_cap_info,
+                evidence_package=evidence,
+                notes="daily reservation refused — concurrent cap or duplicate",
+                retryable=res_reason != "job_uncertain_no_retry",
+                policy_version=policy_version,
+            )
+            return AuthorizeResult(
+                False,
+                STATE_READY_FOR_APPROVAL,
+                SOP_STATUS_MAP[STATE_READY_FOR_APPROVAL],
+                pkg,
+                blocking,
+                "daily_submit_cap",
+                res_reason,
+            )
 
     pkg = build_application_package(
         job_key=jk,
@@ -1490,11 +1602,15 @@ def record_submission_outcome(
     pdf_fingerprint: Optional[str] = None,
     evidence_refs: Optional[Sequence[str]] = None,
     ledger: Optional[Ledger] = None,
+    reservation_id: Optional[str] = None,
     policy_version: str = POLICY_VERSION,
 ) -> dict[str, Any]:
     """
     Map post-submit evidence → Applied | Submitted | SubmissionUncertain.
     Uncertain is never retryable and must not be recorded as Applied.
+
+    When a reservation_id is provided, Applied/Submitted consumes it and
+    SubmissionUncertain marks the reservation uncertain (no retry / no re-reserve).
     """
     verdict = post_submit_timeout_hold(
         confirmation_seen=portal_confirmation,
@@ -1522,6 +1638,7 @@ def record_submission_outcome(
         "blocking_reasons": list(verdict.blocking_reasons),
         "policy_version": policy_version,
         "notes": verdict.message,
+        "reservation_id": reservation_id,
     }
     validate(receipt, "submission-receipt.schema.json")
 
@@ -1551,8 +1668,25 @@ def record_submission_outcome(
                 "submission_outcome": outcome,
                 "retryable": False,
                 "submit_date": datetime_today_kolkata(),
+                "reservation_id": reservation_id,
             },
         )
+        if reservation_id:
+            # Ownership-checked state transition; authority already enforced at reserve.
+            if outcome in {STATE_APPLIED, "Submitted"}:
+                ledger.consume_submission_reservation(
+                    reservation_id,
+                    run_id=run_id,
+                    job_key=job_key,
+                    require_authority=False,
+                )
+            elif outcome == STATE_UNCERTAIN:
+                ledger.mark_submission_reservation_uncertain(
+                    reservation_id,
+                    run_id=run_id,
+                    job_key=job_key,
+                    require_authority=False,
+                )
     return receipt
 
 

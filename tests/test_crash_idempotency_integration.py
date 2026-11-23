@@ -116,9 +116,11 @@ def test_form_lock_blocks_second_run_authorize(tmp_path: Path, monkeypatch):
     led1.start_run("race-1", floor=40, phase="authorize")
     acquire_form_lock(led1, canonical_url=url, run_id="race-1")
     ev = pkg["evidence_package"]
-    from trust_boundary import OrchestratorContext
+    from trust_boundary import open_orchestrator
 
-    with OrchestratorContext(principal="pytest"):
+    home = tmp_path / "jobops-home"
+    home.mkdir(exist_ok=True)
+    with open_orchestrator(home, principal="pytest"):
         led1.record_approval(
             approval_id=str(ev["approval_id"]),
             user_id=str(ev["user_id"]),
@@ -128,32 +130,34 @@ def test_form_lock_blocks_second_run_authorize(tmp_path: Path, monkeypatch):
             status="approved",
             run_id="race-1",
         )
-    ok1 = authorize_submission(
-        pkg,
-        run_id="race-1",
-        ledger=led1,
-        dry_run=False,
-        require_form_lock=True,
-        submits_today=0,
-        identity_markers=["alex", "candidate"],
-        consent_auto_submit=True,
-    )
+    with open_orchestrator(home, principal="pytest"):
+        ok1 = authorize_submission(
+            pkg,
+            run_id="race-1",
+            ledger=led1,
+            dry_run=False,
+            require_form_lock=True,
+            submits_today=0,
+            identity_markers=["alex", "candidate"],
+            consent_auto_submit=True,
+        )
     assert ok1.authorized is True
 
     led2 = Ledger(db)
     led2.start_run("race-2", floor=40, phase="authorize")
     with pytest.raises(RuntimeError, match="lock held"):
         acquire_form_lock(led2, canonical_url=url, run_id="race-2")
-    blocked = authorize_submission(
-        pkg,
-        run_id="race-2",
-        ledger=led2,
-        dry_run=False,
-        require_form_lock=True,
-        submits_today=0,
-        identity_markers=["alex", "candidate"],
-        consent_auto_submit=True,
-    )
+    with open_orchestrator(home, principal="pytest"):
+        blocked = authorize_submission(
+            pkg,
+            run_id="race-2",
+            ledger=led2,
+            dry_run=False,
+            require_form_lock=True,
+            submits_today=0,
+            identity_markers=["alex", "candidate"],
+            consent_auto_submit=True,
+        )
     assert blocked.authorized is False
     assert any("form_lock" in b for b in blocked.blocking_reasons)
     led1.close()
