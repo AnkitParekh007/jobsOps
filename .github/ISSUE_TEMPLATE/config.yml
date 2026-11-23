@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: jobsOps Discussions
+    url: https://github.com/AnkitParekh007/jobsOps/discussions
+    about: Questions, design talk, and non-bug support (enable Discussions in repo settings if the link 404s).
+  - name: Security policy
+    url: https://github.com/AnkitParekh007/jobsOps/blob/main/SECURITY.md
+    about: Vulnerability reporting — do not file public exploit details.
+  - name: Wiki / docs
+    url: https://github.com/AnkitParekh007/jobsOps/blob/main/docs/wiki/Home.md
+    about: Architecture, CLI, frontiers, and readiness notes.

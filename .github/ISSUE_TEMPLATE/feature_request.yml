@@ -1,0 +1,48 @@
+name: Feature request
+description: Propose a scoped capability aligned with product frontiers and policy gates
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Prefer small, testable increments. High-risk areas (submit, secrets, sponsorship/legal logic, plugins) need threat/acceptance notes.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Desired behavior, frontier (F01–F10) if known, and out-of-scope items.
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: External side-effect risk
+      options:
+        - None (docs / local-only / read-only)
+        - Network read (HTTP discovery / verify)
+        - Write / sync connector
+        - Submit or outreach send (requires explicit gates)
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance ideas
+      description: Tests, contracts, or eval suites that would prove this works.
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Constraints acknowledged
+      options:
+        - label: No production-readiness claim without independent audit
+          required: true
+        - label: Submit/outreach remain off by default unless separately gated
+          required: true

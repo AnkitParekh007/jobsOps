@@ -1,0 +1,55 @@
+name: Bug report
+description: Report a defect with reproduction steps (no secrets or personal data)
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use synthetic fixtures only. **Do not** paste resumes, cookies, tokens, or real candidate PII.
+        Live submit/outreach stay off by default — say so explicitly if you opted in.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong in one or two sentences?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Exact commands (e.g. jobops doctor, jobops run --preview). Redact secrets.
+      placeholder: |
+        python -m pip install -e ".[dev]"
+        jobops doctor
+        jobops run --workflow discovery --preview
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Environment
+      description: OS, Python version, JOBOPS_RUNTIME (if set)
+      placeholder: macOS 15 / Python 3.12 / deterministic
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety
+      options:
+        - label: I did not commit or paste secrets, cookies, or real candidate data
+          required: true
+        - label: I understand live submit/outreach are off by default and not production-certified
+          required: true

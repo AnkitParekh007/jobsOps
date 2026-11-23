@@ -3,7 +3,8 @@
 Thank you for improving jobsOps. This project is an open-source, local-first career automation harness. We welcome focused bug fixes, source adapters, documentation, accessibility improvements, tests and user experience contributions.
 
 ## Before you start
-- Read [AGENTS.md](AGENTS.md), [architecture](docs/ARCHITECTURE.md), [contracts and evals](docs/CONTRACTS-AND-EVALS.md) and [reference gaps](docs/REFERENCE-GAP-ANALYSIS.md).
+- Read [AGENTS.md](AGENTS.md), the [wiki Home](docs/wiki/Home.md), [architecture](docs/ARCHITECTURE.md), [contracts and evals](docs/CONTRACTS-AND-EVALS.md) and [reference gaps](docs/REFERENCE-GAP-ANALYSIS.md).
+- Follow the [Code of Conduct](CODE_OF_CONDUCT.md). For usage questions prefer [Discussions](https://github.com/AnkitParekh007/jobsOps/discussions) or [SUPPORT.md](SUPPORT.md).
 - New capabilities and high-risk changes (submission, secrets, plugin permissions, legal/authorization logic) should start with an issue and a threat/acceptance checklist. Small bug fixes and docs can be proposed directly.
 - Use synthetic profiles and mock ATS/emails. **Never commit real resumes, job search history, access tokens, cookies or another person's private details.**
 - Document the provider API/terms, pagination, liveness and rate limits for any new job source.
