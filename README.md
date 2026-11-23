@@ -34,6 +34,14 @@ Private candidate facts live under `JOBOPS_HOME` (OS Application Support / XDG),
 
 Logical frontiers (F01–F10) are capabilities, not forty persistent LLM processes. Predictable work stays in deterministic services.
 
+### Pipeline / DAG (motion preview)
+
+GitHub renders the animated GIF below. For the full interactive experience (CSS stagger, live stage pulse), open the HTML companion.
+
+[![jobsOps pipeline / DAG motion preview — submit and outreach OFF](docs/visuals/previews/pipeline-dag.gif)](docs/visuals/pipeline-dag.html)
+
+**[Open interactive Pipeline / DAG →](docs/visuals/pipeline-dag.html)** · [Visual gallery](docs/visuals/index.html)
+
 ```mermaid
 flowchart TD
   T[Schedule / user / event] --> C[F01 Preflight + RunContext]
@@ -69,7 +77,11 @@ context → exclusion → workers → merge → verify → rank → frontier →
   → report_enrich → sheets/drive (offline plans) → ledger_finalize
 ```
 
-### Trust boundaries
+### Trust boundaries (motion preview)
+
+[![jobsOps trust-boundary motion preview — untrusted data never becomes instructions](docs/visuals/previews/trust-boundary.gif)](docs/visuals/trust-boundary.html)
+
+**[Open interactive Trust boundary →](docs/visuals/trust-boundary.html)** · [Visual gallery](docs/visuals/index.html)
 
 ```mermaid
 flowchart LR
@@ -94,9 +106,7 @@ flowchart LR
   HOME -.->|stripped from agent env| CLI
 ```
 
-See [Architecture wiki](docs/wiki/Architecture.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-**Motion visuals** (open in a browser): [docs/visuals/](docs/visuals/index.html) — [Pipeline / DAG](docs/visuals/pipeline-dag.html) · [Trust boundary](docs/visuals/trust-boundary.html). Documentation companions only; submit/outreach stay **off**.
+See [Architecture wiki](docs/wiki/Architecture.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Motion assets are documentation companions only — **not** a production dashboard; submit/outreach stay **off**.
 
 ---
 
@@ -198,7 +208,7 @@ CI runs pytest with `JOBOPS_ALLOW_SUBMIT=0`, `JOBOPS_ENABLE_LIVE_SUBMIT=0`, and 
 | [docs/USER-GUIDE.md](docs/USER-GUIDE.md) | Install / schedule UX |
 | [docs/PRODUCT-SCOPE.md](docs/PRODUCT-SCOPE.md) | Personas, inventory, success metrics |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Frontiers and DAG |
-| [docs/visuals/](docs/visuals/index.html) | Motion DAG + trust-boundary companions |
+| [docs/visuals/](docs/visuals/index.html) | Motion DAG + trust-boundary companions (GIF previews in Architecture section above) |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Phased delivery gates |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | PR expectations |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |
