@@ -1,0 +1,54 @@
+name: Release candidate package smoke
+
+on:
+  pull_request:
+    paths:
+      - "lib/**"
+      - "jobops/**"
+      - "pyproject.toml"
+      - ".github/workflows/release-candidate-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clean-package-smoke:
+    name: wheel and CLI smoke (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    env:
+      JOBOPS_ALLOW_SUBMIT: "0"
+      JOBOPS_ENABLE_LIVE_SUBMIT: "0"
+      JOBOPS_ENABLE_OUTREACH_SEND: "0"
+      JOBOPS_RUNTIME: deterministic
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Build wheel and source archive
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+      - name: Install only built wheel (no editable install)
+        run: |
+          python -m pip install dist/*.whl
+          python -c "import live_discovery, review_queue, verify_jobs, jobops.cli; print('wheel imports OK')"
+      - name: Validate installed commands are present
+        run: |
+          jobops --help
+          jobops review-live --help
+          jobops discover-live --help
+          jobops run --help
+      - name: Fail closed when no source registry exists
+        run: |
+          mkdir -p "${RUNNER_TEMP}/jobops-check"
+          if jobops review-live --sources "${RUNNER_TEMP}/jobops-check/missing.json" --output "${RUNNER_TEMP}/jobops-check/out.json"; then
+            echo "Unexpected success without explicit board configuration"
+            exit 1
+          fi
+          test ! -e "${RUNNER_TEMP}/jobops-check/out.json"
