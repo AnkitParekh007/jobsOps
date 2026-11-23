@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jobops"
+version = "0.1.0"
+description = "Provider-neutral, policy-governed job search operations CLI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "jobsOps contributors" }]
+dependencies = [
+  "jsonschema>=4.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+jobops = "jobops.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["jobops*", "lib*"]
+
+[tool.setuptools.package-data]
+jobops = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["lib", "."]
