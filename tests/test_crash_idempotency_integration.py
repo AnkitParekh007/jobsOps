@@ -110,10 +110,21 @@ def test_form_lock_blocks_second_run_authorize(tmp_path: Path, monkeypatch):
     }
     monkeypatch.setenv("JOBOPS_ALLOW_SUBMIT", "1")
     monkeypatch.setenv("JOBOPS_EVIDENCE_SECRET", _TEST_SECRET.decode())
+    monkeypatch.setenv("JOBOPS_ALLOW_FIXTURE_EVIDENCE", "1")
 
     led1 = Ledger(db)
     led1.start_run("race-1", floor=40, phase="authorize")
     acquire_form_lock(led1, canonical_url=url, run_id="race-1")
+    ev = pkg["evidence_package"]
+    led1.record_approval(
+        approval_id=str(ev["approval_id"]),
+        user_id=str(ev["user_id"]),
+        job_key=job_key,
+        session_id=str(ev["session_id"]),
+        artifact_fingerprint=fp,
+        status="approved",
+        run_id="race-1",
+    )
     ok1 = authorize_submission(
         pkg,
         run_id="race-1",

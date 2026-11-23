@@ -88,6 +88,7 @@ def test_invented_python_claim():
         quality_score_fingerprint=data["quality_score_fingerprint"],
         fingerprint_method=data["fingerprint_method"],
         identity_markers=MARKERS,
+        allow_fixture_method=True,
     )
     assert not ok
     assert any("invented_claim" in b for b in blocking)

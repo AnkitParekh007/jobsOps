@@ -69,10 +69,22 @@ def _mint_all(*, job_key: str, fingerprint: str) -> dict:
 def _authorize(pkg: dict, tmp_path: Path, monkeypatch) -> object:
     monkeypatch.setenv("JOBOPS_ALLOW_SUBMIT", "1")
     monkeypatch.setenv("JOBOPS_EVIDENCE_SECRET", SECRET.decode())
+    monkeypatch.setenv("JOBOPS_ALLOW_FIXTURE_EVIDENCE", "1")
     db = tmp_path / "forge.db"
     led = Ledger(db)
     led.start_run("forge-1", floor=40, phase="authorize")
     acquire_form_lock(led, canonical_url=pkg["canonical_url"], run_id="forge-1")
+    # Durable approval bound to user/job/session/document — required for consent.
+    evidence = pkg.get("evidence_package") or {}
+    led.record_approval(
+        approval_id=str(evidence.get("approval_id") or APPROVAL),
+        user_id=str(evidence.get("user_id") or USER),
+        job_key=str(pkg.get("job_key") or ""),
+        session_id=str(evidence.get("session_id") or SESSION),
+        artifact_fingerprint=str(pkg.get("pdf_fingerprint") or ""),
+        status="approved",
+        run_id="forge-1",
+    )
     result = authorize_submission(
         pkg,
         run_id="forge-1",

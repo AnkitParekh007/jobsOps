@@ -131,6 +131,36 @@ def fingerprint_pdf_file(path: Path) -> tuple[str, str]:
     return fingerprint_bytes(raw), "sha256_bytes"
 
 
+def validate_pdf_file(path: Path) -> tuple[bool, str, bytes]:
+    """
+    Validate that path exists and looks like a real PDF.
+    Returns (ok, reason, raw_bytes).
+    """
+    p = Path(path)
+    if not p.is_file():
+        return False, "pdf_missing", b""
+    try:
+        raw = p.read_bytes()
+    except OSError as exc:
+        return False, f"pdf_unreadable:{exc}", b""
+    if not raw.startswith(PDF_MAGIC):
+        return False, "pdf_invalid_magic", raw
+    if len(raw) < 64:
+        return False, "pdf_too_small", raw
+    return True, "ok", raw
+
+
+def recompute_pdf_fingerprint(path: Path) -> tuple[bool, str, str, str]:
+    """
+    Recompute SHA-256 of the actual PDF bytes.
+    Returns (ok, reason, fingerprint, method).
+    """
+    ok, reason, raw = validate_pdf_file(path)
+    if not ok:
+        return False, reason, "", ""
+    return True, "ok", fingerprint_bytes(raw), "sha256_bytes"
+
+
 def extract_pdf_text(path: Path) -> str:
     """
     Best-effort PDF text extract for E07.
@@ -278,13 +308,20 @@ def validate_materials(
     quality_score_fingerprint: Optional[str],
     fingerprint_method: str,
     identity_markers: Optional[Sequence[str]] = None,
+    allow_fixture_method: bool = False,
 ) -> tuple[bool, list[str]]:
     """E07 materials gates: floors, fingerprint match, no invented skills."""
     blocking: list[str] = []
     if not pdf_fingerprint or not str(pdf_fingerprint).strip():
         blocking.append("missing_pdf_fingerprint")
-    if fingerprint_method not in {"sha256_bytes", "sha256_normalized_text", "fixture"}:
-        blocking.append("invalid_fingerprint_method")
+    allowed_methods = set(LIVE_FINGERPRINT_METHODS)
+    if allow_fixture_method:
+        allowed_methods |= FIXTURE_FINGERPRINT_METHODS
+    if fingerprint_method not in allowed_methods:
+        if fingerprint_method in FIXTURE_FINGERPRINT_METHODS:
+            blocking.append("fixture_evidence_rejected_on_live_path")
+        else:
+            blocking.append("invalid_fingerprint_method")
     if ats_score < ATS_FLOOR:
         blocking.append(f"ats_below_floor:{ats_score}<{ATS_FLOOR}")
     if quality_score < QUALITY_FLOOR:
@@ -333,25 +370,46 @@ INDEPENDENT_EVIDENCE_KEYS = (
 
 TRUSTED_EVIDENCE_KIND = "trusted_evidence_v1"
 EVIDENCE_SECRET_ENV = "JOBOPS_EVIDENCE_SECRET"
-# Dev/test-only fallback — production must set JOBOPS_EVIDENCE_SECRET or workspace secret.
-_DEV_EVIDENCE_SECRET = b"jobops-dev-evidence-secret-not-for-production"
+# Publicly known insecure value — rejected on every path (including if set in env).
+_KNOWN_INSECURE_EVIDENCE_SECRETS = frozenset(
+    {
+        b"jobops-dev-evidence-secret-not-for-production",
+        b"changeme",
+        b"secret",
+        b"test",
+    }
+)
+FIXTURE_FINGERPRINT_METHODS = frozenset({"fixture"})
+LIVE_FINGERPRINT_METHODS = frozenset({"sha256_bytes", "sha256_normalized_text"})
+PDF_MAGIC = b"%PDF"
+
+
+class EvidenceSecretError(RuntimeError):
+    """No secure installation-specific evidence signing key is available."""
 
 
 def evidence_secret(*, workspace_home: Optional[Path] = None) -> bytes:
     """
     Resolve HMAC secret for trusted evidence.
-    Prefer env, then private workspace file; never accept agent-supplied secrets.
+
+    Prefer env, then private workspace file. Fail closed when unavailable.
+    Never returns a publicly known fallback secret.
     """
     env = (os.environ.get(EVIDENCE_SECRET_ENV) or "").strip()
     if env:
-        return env.encode("utf-8")
+        raw = env.encode("utf-8")
+        if raw in _KNOWN_INSECURE_EVIDENCE_SECRETS or len(raw) < 16:
+            raise EvidenceSecretError("evidence_secret_insecure_or_too_short")
+        return raw
     if workspace_home is not None:
         path = Path(workspace_home) / "secrets" / "evidence_hmac.key"
         if path.is_file():
             raw = path.read_bytes().strip()
+            if raw in _KNOWN_INSECURE_EVIDENCE_SECRETS or len(raw) < 16:
+                raise EvidenceSecretError("evidence_secret_insecure_or_too_short")
             if raw:
                 return raw
-    return _DEV_EVIDENCE_SECRET
+    raise EvidenceSecretError("evidence_secret_unavailable")
 
 
 def _evidence_payload_str(
@@ -857,19 +915,79 @@ def authorize_submission(
     # Global kill switches — external submit disabled by default.
     if os.environ.get("JOBOPS_ALLOW_SUBMIT", "0") != "1":
         auto_submit = False
-    if os.environ.get("JOBOPS_ENABLE_LIVE_SUBMIT", "0") != "1":
-        # Live portal submit remains off unless explicitly enabled.
-        pass
-    evidence_key = evidence_secret(workspace_home=workspace_home)
+    live_submit = os.environ.get("JOBOPS_ENABLE_LIVE_SUBMIT", "0") == "1"
+    allow_fixture = os.environ.get("JOBOPS_ALLOW_FIXTURE_EVIDENCE", "0") == "1"
+    # Live portal paths never accept fixture fingerprints.
+    # dry-run may use fixture digests; non-dry authorize needs override or real PDF.
+    live_pdf_path = bool(live_submit) or bool(package_input.get("require_live_pdf"))
+    reject_fixture = live_submit or (not dry_run and not allow_fixture)
+
+    try:
+        evidence_key = evidence_secret(workspace_home=workspace_home)
+    except EvidenceSecretError as exc:
+        pkg = build_application_package(
+            job_key=jk,
+            canonical_url=canon,
+            run_id=run_id,
+            state=STATE_PREPARING,
+            ats_score=float(package_input.get("ats_score") or 0),
+            quality_score=float(package_input.get("quality_score") or 0),
+            pdf_fingerprint=str(package_input.get("pdf_fingerprint") or "none"),
+            fingerprint_method=str(package_input.get("fingerprint_method") or "fixture"),
+            checklist=default_checklist(),
+            blocking_reasons=[f"evidence_secret:{exc}"],
+            policy_version=policy_version,
+        )
+        return AuthorizeResult(
+            False,
+            STATE_PREPARING,
+            SOP_STATUS_MAP[STATE_PREPARING],
+            pkg,
+            [f"evidence_secret:{exc}"],
+            "evidence_secret_unavailable",
+            str(exc),
+        )
 
     extracted = str(package_input.get("extracted_text") or "")
     pdf_path = package_input.get("pdf_path")
     fingerprint = str(package_input.get("pdf_fingerprint") or "")
     method = str(package_input.get("fingerprint_method") or "fixture")
-    if pdf_path and Path(str(pdf_path)).is_file() and not fingerprint:
-        fingerprint, method = fingerprint_pdf_file(Path(str(pdf_path)))
-        if not extracted:
-            extracted = extract_pdf_text(Path(str(pdf_path)))
+    pdf_blocking: list[str] = []
+
+    # Live / production paths: require real PDF, recompute fingerprint, reject fixtures.
+    if reject_fixture or live_pdf_path or live_submit:
+        if not pdf_path:
+            if reject_fixture and method in FIXTURE_FINGERPRINT_METHODS:
+                pdf_blocking.append("fixture_evidence_rejected_on_live_path")
+            elif live_submit or live_pdf_path:
+                pdf_blocking.append("pdf_path_required_on_live_path")
+        else:
+            ok_pdf, pdf_reason, recomputed, recomputed_method = recompute_pdf_fingerprint(
+                Path(str(pdf_path))
+            )
+            if not ok_pdf:
+                pdf_blocking.append(pdf_reason)
+            else:
+                if fingerprint and fingerprint != recomputed:
+                    pdf_blocking.append("pdf_fingerprint_mismatch_recomputed")
+                fingerprint = recomputed
+                method = recomputed_method
+                if not extracted:
+                    extracted = extract_pdf_text(Path(str(pdf_path)))
+    elif pdf_path and Path(str(pdf_path)).is_file():
+        # Soft path: recompute when file present even for dry-run.
+        ok_pdf, pdf_reason, recomputed, recomputed_method = recompute_pdf_fingerprint(
+            Path(str(pdf_path))
+        )
+        if ok_pdf:
+            if fingerprint and fingerprint != recomputed:
+                pdf_blocking.append("pdf_fingerprint_mismatch_recomputed")
+            fingerprint = recomputed
+            method = recomputed_method
+            if not extracted:
+                extracted = extract_pdf_text(Path(str(pdf_path)))
+        elif not fingerprint:
+            pdf_blocking.append(pdf_reason)
 
     ats = float(package_input.get("ats_score") or 0)
     quality = float(package_input.get("quality_score") or 0)
@@ -883,6 +1001,17 @@ def authorize_submission(
         qual_fp_s: Optional[str] = qual_fp
     else:
         qual_fp_s = fingerprint or None
+    # After recompute, score fingerprints must match the recomputed digest.
+    if fingerprint and method in LIVE_FINGERPRINT_METHODS:
+        if ats_fp_s and ats_fp_s != fingerprint:
+            # Keep mismatch detection in validate_materials.
+            pass
+        elif not ats_fp_s:
+            ats_fp_s = fingerprint
+        if qual_fp_s and qual_fp_s != fingerprint:
+            pass
+        elif not qual_fp_s:
+            qual_fp_s = fingerprint
 
     materials_ok, mat_blocking = validate_materials(
         extracted_text=extracted,
@@ -893,7 +1022,11 @@ def authorize_submission(
         quality_score_fingerprint=qual_fp_s,
         fingerprint_method=method,
         identity_markers=markers,
+        allow_fixture_method=(not live_submit) and (allow_fixture or dry_run),
     )
+    if pdf_blocking:
+        materials_ok = False
+        mat_blocking = list(mat_blocking) + pdf_blocking
 
     # Daily cap — independent ledger/count check
     if submits_today is None:
@@ -930,6 +1063,23 @@ def authorize_submission(
     user_approved = bool(
         isinstance(consent_rec, Mapping) and consent_rec.get("kind") == TRUSTED_EVIDENCE_KIND
     )
+    # When a ledger is present, consent must also match a durable approval row.
+    if user_approved and ledger is not None and isinstance(consent_rec, Mapping):
+        approval_id = str(consent_rec.get("approval_id") or evidence.get("approval_id") or "")
+        if approval_id:
+            ok_appr, appr_reason, _ = ledger.require_approved(
+                approval_id,
+                user_id=str(consent_rec.get("user_id") or evidence.get("user_id") or ""),
+                job_key=jk,
+                session_id=str(consent_rec.get("session_id") or evidence.get("session_id") or ""),
+                artifact_fingerprint=fingerprint or "",
+            )
+            if not ok_appr:
+                user_approved = False
+                evidence["approval_binding_error"] = appr_reason
+        else:
+            user_approved = False
+            evidence["approval_binding_error"] = "consent_missing_approval_id"
 
     checklist, evidence_blocking = derive_authorization_checklist(
         materials_ok=materials_ok,

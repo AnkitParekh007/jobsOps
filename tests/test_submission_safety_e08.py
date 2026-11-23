@@ -122,6 +122,17 @@ def test_form_lock_held_can_authorize(tmp_path: Path, monkeypatch):
     )
     monkeypatch.setenv("JOBOPS_ALLOW_SUBMIT", "1")
     monkeypatch.setenv("JOBOPS_EVIDENCE_SECRET", TEST_SECRET.decode())
+    monkeypatch.setenv("JOBOPS_ALLOW_FIXTURE_EVIDENCE", "1")
+    ev = data["evidence_package"]
+    led.record_approval(
+        approval_id=str(ev["approval_id"]),
+        user_id=str(ev["user_id"]),
+        job_key=str(data["job_key"]),
+        session_id=str(ev["session_id"]),
+        artifact_fingerprint=str(data["pdf_fingerprint"]),
+        status="approved",
+        run_id="e08-lock",
+    )
     result = authorize_submission(
         data,
         run_id="e08-lock",

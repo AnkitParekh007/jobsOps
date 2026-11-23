@@ -102,10 +102,27 @@ CREATE TABLE IF NOT EXISTS audit_events (
   detail_json TEXT NOT NULL DEFAULT '{}'
 );
 
+CREATE TABLE IF NOT EXISTS approvals (
+  approval_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  job_key TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  artifact_fingerprint TEXT NOT NULL,
+  document_path TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  decided_at TEXT,
+  decided_by TEXT NOT NULL DEFAULT '',
+  run_id TEXT,
+  meta_json TEXT NOT NULL DEFAULT '{}'
+);
+
 CREATE INDEX IF NOT EXISTS idx_artifacts_run ON artifacts(run_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_job ON artifacts(job_key);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_task_run ON task_attempts(run_id, stage);
+CREATE INDEX IF NOT EXISTS idx_approvals_job ON approvals(job_key, status);
+CREATE INDEX IF NOT EXISTS idx_approvals_user ON approvals(user_id, status);
 """
 
 
@@ -302,6 +319,124 @@ class Ledger:
         )
         self._conn.commit()
         self.audit("lock_released", run_id=run_id, detail={"resource": resource})
+
+    def record_approval(
+        self,
+        *,
+        approval_id: str,
+        user_id: str,
+        job_key: str,
+        session_id: str,
+        artifact_fingerprint: str,
+        document_path: str = "",
+        status: str = "approved",
+        decided_by: str = "user",
+        run_id: Optional[str] = None,
+        meta: Optional[Mapping[str, Any]] = None,
+    ) -> str:
+        """
+        Durable approval bound to authenticated user, requisition, session, document.
+        Evidence issuance must look up this row — agents cannot mint approvals.
+        """
+        if status not in {"pending", "approved", "revoked"}:
+            raise ValueError(f"invalid approval status: {status}")
+        now = _now()
+        decided_at = now if status in {"approved", "revoked"} else None
+        with self.transaction():
+            self._conn.execute(
+                """
+                INSERT INTO approvals(
+                  approval_id, user_id, job_key, session_id, artifact_fingerprint,
+                  document_path, status, created_at, decided_at, decided_by, run_id, meta_json
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(approval_id) DO UPDATE SET
+                  status=excluded.status,
+                  decided_at=excluded.decided_at,
+                  decided_by=excluded.decided_by,
+                  meta_json=excluded.meta_json
+                """,
+                (
+                    approval_id,
+                    user_id,
+                    job_key,
+                    session_id,
+                    artifact_fingerprint,
+                    document_path or "",
+                    status,
+                    now,
+                    decided_at,
+                    decided_by,
+                    run_id,
+                    json.dumps(meta or {}, ensure_ascii=False),
+                ),
+            )
+            self._conn.execute(
+                "INSERT INTO audit_events(created_at, run_id, kind, detail_json) VALUES (?,?,?,?)",
+                (
+                    now,
+                    run_id,
+                    "approval_recorded",
+                    json.dumps(
+                        {
+                            "approval_id": approval_id,
+                            "user_id": user_id,
+                            "job_key": job_key,
+                            "session_id": session_id,
+                            "artifact_fingerprint": artifact_fingerprint,
+                            "status": status,
+                        },
+                        ensure_ascii=False,
+                    ),
+                ),
+            )
+        return approval_id
+
+    def get_approval(self, approval_id: str) -> Optional[dict[str, Any]]:
+        row = self._conn.execute(
+            "SELECT * FROM approvals WHERE approval_id=?",
+            (approval_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "approval_id": row["approval_id"],
+            "user_id": row["user_id"],
+            "job_key": row["job_key"],
+            "session_id": row["session_id"],
+            "artifact_fingerprint": row["artifact_fingerprint"],
+            "document_path": row["document_path"] or "",
+            "status": row["status"],
+            "created_at": row["created_at"],
+            "decided_at": row["decided_at"],
+            "decided_by": row["decided_by"] or "",
+            "run_id": row["run_id"],
+            "meta": json.loads(row["meta_json"] or "{}"),
+        }
+
+    def require_approved(
+        self,
+        approval_id: str,
+        *,
+        user_id: str,
+        job_key: str,
+        session_id: str,
+        artifact_fingerprint: str,
+    ) -> tuple[bool, str, Optional[dict[str, Any]]]:
+        """Verify durable approval bindings; used by trusted evidence issuer."""
+        row = self.get_approval(approval_id)
+        if row is None:
+            return False, "approval_not_found", None
+        if row["status"] != "approved":
+            return False, f"approval_not_approved:{row['status']}", row
+        if row["user_id"] != user_id:
+            return False, "approval_user_mismatch", row
+        if row["job_key"] != job_key:
+            return False, "approval_job_mismatch", row
+        if row["session_id"] != session_id:
+            return False, "approval_session_mismatch", row
+        if row["artifact_fingerprint"] != artifact_fingerprint:
+            return False, "approval_fingerprint_mismatch", row
+        return True, "ok", row
 
     def append_artifact(self, envelope: Mapping[str, Any]) -> bool:
         """Insert enveloped artifact. Returns False if idempotent duplicate."""
