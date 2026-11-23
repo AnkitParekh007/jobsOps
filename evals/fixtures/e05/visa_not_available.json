@@ -1,0 +1,18 @@
+{
+  "canonical_url": "https://jobs.ashbyhq.com/Clera/e2c5a274-47cc-414a-862e-33a2e8ab91b4",
+  "employer_or_ats_url": "https://jobs.ashbyhq.com/Clera/e2c5a274-47cc-414a-862e-33a2e8ab91b4",
+  "organization": "Clera",
+  "role": "Forward Deployed Engineer",
+  "status": "Eligible",
+  "lane": 1,
+  "country": "Germany",
+  "source": "Ashby",
+  "reason": "Hard auth gate: visa sponsorship is not available",
+  "posting_text": "Visa sponsorship is not available for this role.",
+  "sponsorship_quote": "",
+  "evidence_refs": [
+    "https://jobs.ashbyhq.com/Clera/e2c5a274-47cc-414a-862e-33a2e8ab91b4"
+  ],
+  "expected_decision": "Skipped",
+  "must_not_be_eligible": true
+}

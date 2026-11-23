@@ -1,0 +1,31 @@
+{
+  "jobs": [
+    {
+      "job_key": "url:https://jobs.ashbyhq.com/sync/one",
+      "canonical_url": "https://jobs.ashbyhq.com/sync/one",
+      "organization": "SyncCo",
+      "role": "FDE",
+      "status": "Needs review",
+      "country": "Germany",
+      "lane": "1"
+    },
+    {
+      "job_key": "url:https://jobs.ashbyhq.com/sync/two",
+      "canonical_url": "https://jobs.ashbyhq.com/sync/two",
+      "organization": "SyncCo",
+      "role": "Frontend",
+      "status": "Eligible",
+      "country": "Ireland",
+      "lane": "2"
+    },
+    {
+      "job_key": "url:https://jobs.lever.co/sync/three",
+      "canonical_url": "https://jobs.lever.co/sync/three",
+      "organization": "OtherCo",
+      "role": "Architect",
+      "status": "Applied",
+      "country": "UAE",
+      "lane": "1"
+    }
+  ]
+}

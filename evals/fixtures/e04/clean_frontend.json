@@ -1,0 +1,19 @@
+{
+  "canonical_url": "https://jobs.ashbyhq.com/example/clean-fe-1",
+  "employer_or_ats_url": "https://jobs.ashbyhq.com/example/clean-fe-1",
+  "organization": "UIWorks",
+  "role": "Lead Frontend Engineer",
+  "status": "Needs review",
+  "lane": 2,
+  "country": "Germany",
+  "source": "Ashby",
+  "reason": "TS/React stack with sponsorship",
+  "posting_text": "React and TypeScript. Visa sponsorship available for EU transfers.",
+  "availability": "open",
+  "sponsorship_quote": "Visa sponsorship available for EU transfers.",
+  "evidence_refs": [
+    "https://jobs.ashbyhq.com/example/clean-fe-1"
+  ],
+  "expected_decision": "Eligible",
+  "must_not_be_eligible": false
+}

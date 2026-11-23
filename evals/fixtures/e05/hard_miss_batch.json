@@ -1,0 +1,467 @@
+{
+  "description": "\u226520 hard-miss / never-Eligible fixtures for E05 expanded",
+  "postings": [
+    {
+      "id": "e05-01-german_c1",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/german_c1-1",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/german_c1-1",
+      "organization": "FixtureCo1",
+      "role": "Forward Deployed Engineer",
+      "status": "Eligible",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture german_c1",
+      "posting_text": "German C1 mandatory for customer calls.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/german_c1-1"
+      ],
+      "expected_decision": "Skipped",
+      "must_not_be_eligible": true,
+      "kind": "hard_miss"
+    },
+    {
+      "id": "e05-02-german_fluent",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/german_fluent-2",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/german_fluent-2",
+      "organization": "FixtureCo2",
+      "role": "Senior Frontend Engineer",
+      "status": "Eligible",
+      "lane": 2,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture german_fluent",
+      "posting_text": "Fluent German essential for this Berlin role.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/german_fluent-2"
+      ],
+      "expected_decision": "Skipped",
+      "must_not_be_eligible": true,
+      "kind": "hard_miss"
+    },
+    {
+      "id": "e05-03-german_native",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/german_native-3",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/german_native-3",
+      "organization": "FixtureCo3",
+      "role": "Forward Deployed Engineer",
+      "status": "Eligible",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture german_native",
+      "posting_text": "Native-level German required.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/german_native-3"
+      ],
+      "expected_decision": "Skipped",
+      "must_not_be_eligible": true,
+      "kind": "hard_miss"
+    },
+    {
+      "id": "e05-04-professional_german",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/professional_german-4",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/professional_german-4",
+      "organization": "FixtureCo4",
+      "role": "Senior Frontend Engineer",
+      "status": "Eligible",
+      "lane": 2,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture professional_german",
+      "posting_text": "Professional German required daily.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/professional_german-4"
+      ],
+      "expected_decision": "Skipped",
+      "must_not_be_eligible": true,
+      "kind": "hard_miss"
+    },
+    {
+      "id": "e05-05-visa_not_available",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/visa_not_available-5",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/visa_not_available-5",
+      "organization": "FixtureCo5",
+      "role": "Forward Deployed Engineer",
+      "status": "Eligible",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture visa_not_available",
+      "posting_text": "Visa sponsorship is not available for this role.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/visa_not_available-5"
+      ],
+      "expected_decision": "Skipped",
+      "must_not_be_eligible": true,
+      "kind": "hard_miss"
+    },
+    {
+      "id": "e05-06-no_visa_sponsorship",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/no_visa_sponsorship-6",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/no_visa_sponsorship-6",
+      "organization": "FixtureCo6",
+      "role": "Senior Frontend Engineer",
+      "status": "Eligible",
+      "lane": 2,
+      "country": "Ireland",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture no_visa_sponsorship",
+      "posting_text": "No visa sponsorship. Must have existing IE work rights.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/no_visa_sponsorship-6"
+      ],
+      "expected_decision": "Skipped",
+      "must_not_be_eligible": true,
+      "kind": "hard_miss"
+    },
+    {
+      "id": "e05-07-sponsorship_not_available",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/sponsorship_not_available-7",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/sponsorship_not_available-7",
+      "organization": "FixtureCo7",
+      "role": "Forward Deployed Engineer",
+      "status": "Eligible",
+      "lane": 1,
+      "country": "UAE",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture sponsorship_not_available",
+      "posting_text": "Sponsorship not available \u2014 UAE nationals preferred.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/sponsorship_not_available-7"
+      ],
+      "expected_decision": "Skipped",
+      "must_not_be_eligible": true,
+      "kind": "hard_miss"
+    },
+    {
+      "id": "e05-08-python_required",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/python_required-8",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/python_required-8",
+      "organization": "FixtureCo8",
+      "role": "Senior Frontend Engineer",
+      "status": "Eligible",
+      "lane": 2,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture python_required",
+      "posting_text": "Python required for automation scripts in this FDE role.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/python_required-8"
+      ],
+      "expected_decision": "Skipped",
+      "must_not_be_eligible": true,
+      "kind": "hard_miss"
+    },
+    {
+      "id": "e05-09-python_mandatory",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/python_mandatory-9",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/python_mandatory-9",
+      "organization": "FixtureCo9",
+      "role": "Forward Deployed Engineer",
+      "status": "Eligible",
+      "lane": 1,
+      "country": "Ireland",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture python_mandatory",
+      "posting_text": "Python mandatory. TypeScript nice to have.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/python_mandatory-9"
+      ],
+      "expected_decision": "Skipped",
+      "must_not_be_eligible": true,
+      "kind": "hard_miss"
+    },
+    {
+      "id": "e05-10-must_have_python",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/must_have_python-10",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/must_have_python-10",
+      "organization": "FixtureCo10",
+      "role": "Senior Frontend Engineer",
+      "status": "Eligible",
+      "lane": 2,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture must_have_python",
+      "posting_text": "Must-have Python plus customer-facing delivery.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/must_have_python-10"
+      ],
+      "expected_decision": "Skipped",
+      "must_not_be_eligible": true,
+      "kind": "hard_miss"
+    },
+    {
+      "id": "e05-11-relocation_only_de",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/relocation_only_de-11",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/relocation_only_de-11",
+      "organization": "FixtureCo11",
+      "role": "Forward Deployed Engineer",
+      "status": "Eligible",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture relocation_only_de",
+      "posting_text": "Relocation support offered for Munich. Candidates willing to relocate encouraged.",
+      "availability": "open",
+      "sponsorship_quote": "Relocation assistance available.",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/relocation_only_de-11"
+      ],
+      "expected_decision": "Needs review",
+      "must_not_be_eligible": true,
+      "kind": "reloc"
+    },
+    {
+      "id": "e05-12-relocation_package_ie",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/relocation_package_ie-12",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/relocation_package_ie-12",
+      "organization": "FixtureCo12",
+      "role": "Senior Frontend Engineer",
+      "status": "Eligible",
+      "lane": 2,
+      "country": "Ireland",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture relocation_package_ie",
+      "posting_text": "Relocation package available. Willing to relocate to Dublin.",
+      "availability": "open",
+      "sponsorship_quote": "Relocation assistance available.",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/relocation_package_ie-12"
+      ],
+      "expected_decision": "Needs review",
+      "must_not_be_eligible": true,
+      "kind": "reloc"
+    },
+    {
+      "id": "e05-13-relocation_uae",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/relocation_uae-13",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/relocation_uae-13",
+      "organization": "FixtureCo13",
+      "role": "Forward Deployed Engineer",
+      "status": "Eligible",
+      "lane": 1,
+      "country": "UAE",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture relocation_uae",
+      "posting_text": "Relocation assistance for Dubai. No sponsor language.",
+      "availability": "open",
+      "sponsorship_quote": "Relocation assistance available.",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/relocation_uae-13"
+      ],
+      "expected_decision": "Needs review",
+      "must_not_be_eligible": true,
+      "kind": "reloc"
+    },
+    {
+      "id": "e05-14-missing_sponsor_de",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/missing_sponsor_de-14",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/missing_sponsor_de-14",
+      "organization": "FixtureCo14",
+      "role": "Senior Frontend Engineer",
+      "status": "Eligible",
+      "lane": 2,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture missing_sponsor_de",
+      "posting_text": "Angular and React. Full-time Berlin hybrid.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/missing_sponsor_de-14"
+      ],
+      "expected_decision": "Needs review",
+      "must_not_be_eligible": true,
+      "kind": "missing"
+    },
+    {
+      "id": "e05-15-missing_sponsor_ie",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/missing_sponsor_ie-15",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/missing_sponsor_ie-15",
+      "organization": "FixtureCo15",
+      "role": "Forward Deployed Engineer",
+      "status": "Eligible",
+      "lane": 1,
+      "country": "Ireland",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture missing_sponsor_ie",
+      "posting_text": "Forward deployed engineer for enterprise accounts in Dublin.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/missing_sponsor_ie-15"
+      ],
+      "expected_decision": "Needs review",
+      "must_not_be_eligible": true,
+      "kind": "missing"
+    },
+    {
+      "id": "e05-16-missing_sponsor_uae",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/missing_sponsor_uae-16",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/missing_sponsor_uae-16",
+      "organization": "FixtureCo16",
+      "role": "Senior Frontend Engineer",
+      "status": "Eligible",
+      "lane": 2,
+      "country": "UAE",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture missing_sponsor_uae",
+      "posting_text": "Staff frontend architect. On-site Dubai.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/missing_sponsor_uae-16"
+      ],
+      "expected_decision": "Needs review",
+      "must_not_be_eligible": true,
+      "kind": "missing"
+    },
+    {
+      "id": "e05-17-german_c2",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/german_c2-17",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/german_c2-17",
+      "organization": "FixtureCo17",
+      "role": "Forward Deployed Engineer",
+      "status": "Eligible",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture german_c2",
+      "posting_text": "German C2 expected for regulatory workshops.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/german_c2-17"
+      ],
+      "expected_decision": "Skipped",
+      "must_not_be_eligible": true,
+      "kind": "hard_miss"
+    },
+    {
+      "id": "e05-18-visa_not_available_ie",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/visa_not_available_ie-18",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/visa_not_available_ie-18",
+      "organization": "FixtureCo18",
+      "role": "Senior Frontend Engineer",
+      "status": "Eligible",
+      "lane": 2,
+      "country": "Ireland",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture visa_not_available_ie",
+      "posting_text": "Visa sponsorship is not available. EU passport required.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/visa_not_available_ie-18"
+      ],
+      "expected_decision": "Skipped",
+      "must_not_be_eligible": true,
+      "kind": "hard_miss"
+    },
+    {
+      "id": "e05-19-python_must_have_uae",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/python_must_have_uae-19",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/python_must_have_uae-19",
+      "organization": "FixtureCo19",
+      "role": "Forward Deployed Engineer",
+      "status": "Eligible",
+      "lane": 1,
+      "country": "UAE",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture python_must_have_uae",
+      "posting_text": "Must-have Python for data tooling alongside React.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/python_must_have_uae-19"
+      ],
+      "expected_decision": "Skipped",
+      "must_not_be_eligible": true,
+      "kind": "hard_miss"
+    },
+    {
+      "id": "e05-20-german_essential",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/german_essential-20",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/german_essential-20",
+      "organization": "FixtureCo20",
+      "role": "Senior Frontend Engineer",
+      "status": "Eligible",
+      "lane": 2,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture german_essential",
+      "posting_text": "German fluent essential; English also used.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/german_essential-20"
+      ],
+      "expected_decision": "Skipped",
+      "must_not_be_eligible": true,
+      "kind": "hard_miss"
+    },
+    {
+      "id": "e05-21-no_sponsor_plus_reloc",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/no_sponsor_plus_reloc-21",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/no_sponsor_plus_reloc-21",
+      "organization": "FixtureCo21",
+      "role": "Forward Deployed Engineer",
+      "status": "Eligible",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture no_sponsor_plus_reloc",
+      "posting_text": "Relocation assistance available. Visa sponsorship is not available.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/no_sponsor_plus_reloc-21"
+      ],
+      "expected_decision": "Skipped",
+      "must_not_be_eligible": true,
+      "kind": "hard_miss"
+    },
+    {
+      "id": "e05-22-ambiguous_visa_word",
+      "canonical_url": "https://jobs.ashbyhq.com/fixture/ambiguous_visa_word-22",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/fixture/ambiguous_visa_word-22",
+      "organization": "FixtureCo22",
+      "role": "Senior Frontend Engineer",
+      "status": "Eligible",
+      "lane": 2,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard-miss fixture ambiguous_visa_word",
+      "posting_text": "Candidates must discuss visa or immigration status with HR.",
+      "availability": "open",
+      "sponsorship_quote": "",
+      "evidence_refs": [
+        "https://jobs.ashbyhq.com/fixture/ambiguous_visa_word-22"
+      ],
+      "expected_decision": "Needs review",
+      "must_not_be_eligible": true,
+      "kind": "ambiguous"
+    }
+  ]
+}

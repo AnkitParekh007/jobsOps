@@ -1,0 +1,50 @@
+{
+  "description": "Golden hard-miss traces from Phase 2–3 — must never regress to Eligible",
+  "cases": [
+    {
+      "name": "de_c1_german",
+      "country": "Germany",
+      "status": "Eligible",
+      "reason": "Strong TypeScript fit",
+      "posting_text": "Native-level German C1 required for client workshops.",
+      "sponsorship_quote": "Visa sponsorship available",
+      "expect_eligible": false
+    },
+    {
+      "name": "visa_not_available",
+      "country": "Ireland",
+      "status": "Eligible",
+      "reason": "Good frontend match",
+      "posting_text": "Visa sponsorship is not available for this role.",
+      "sponsorship_quote": "",
+      "expect_eligible": false
+    },
+    {
+      "name": "relocation_not_sponsorship",
+      "country": "Germany",
+      "status": "Eligible",
+      "reason": "Relocation package mentioned",
+      "posting_text": "We offer a relocation package for the right candidate.",
+      "sponsorship_quote": "Relocation support provided",
+      "expect_eligible": false
+    },
+    {
+      "name": "python_must_have",
+      "country": "Germany",
+      "status": "Eligible",
+      "reason": "AI adjacent",
+      "posting_text": "Must-have Python for model evaluation pipelines.",
+      "sponsorship_quote": "We sponsor visas",
+      "expect_eligible": false
+    },
+    {
+      "name": "clean_sponsor_ok",
+      "country": "Germany",
+      "status": "Eligible",
+      "reason": "TypeScript + sponsorship evidenced",
+      "posting_text": "Senior frontend engineer. Visa sponsorship available.",
+      "sponsorship_quote": "Visa sponsorship available",
+      "expect_eligible": true
+    }
+  ]
+}

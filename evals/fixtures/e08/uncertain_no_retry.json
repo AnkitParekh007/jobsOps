@@ -1,0 +1,17 @@
+{
+  "description": "Prior SubmissionUncertain — never auto-retry; never Applied",
+  "job_key": "url:https://jobs.ashbyhq.com/acme/frontend-uncertain",
+  "canonical_url": "https://jobs.ashbyhq.com/acme/frontend-uncertain",
+  "organization": "Acme",
+  "role": "Senior Frontend Engineer",
+  "state": "SubmissionUncertain",
+  "ats_score": 90,
+  "quality_score": 85,
+  "pdf_fingerprint": "unc111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "fingerprint_method": "fixture",
+  "extracted_text": "Ankit Parekh\nAngular React TypeScript",
+  "prior_uncertain": true,
+  "expected_state": "SubmissionUncertain",
+  "expected_authorized": false,
+  "expected_retryable": false
+}

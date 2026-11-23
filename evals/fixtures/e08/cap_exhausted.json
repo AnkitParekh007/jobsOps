@@ -1,0 +1,41 @@
+{
+  "description": "Daily submit cap already used — stay Ready for approval, never SubmissionAuthorized",
+  "job_key": "url:https://jobs.ashbyhq.com/acme/frontend-cap",
+  "canonical_url": "https://jobs.ashbyhq.com/acme/frontend-cap",
+  "organization": "Acme",
+  "role": "Senior Frontend Engineer",
+  "ats_score": 90,
+  "quality_score": 85,
+  "pdf_fingerprint": "cap111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "ats_score_fingerprint": "cap111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "quality_score_fingerprint": "cap111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "fingerprint_method": "fixture",
+  "extracted_text": "Ankit Parekh\nAngular React TypeScript enterprise\nProfessional Experience",
+  "checklist": {
+    "posting_open": true,
+    "not_duplicate": true,
+    "hard_eligibility_met": true,
+    "pdf_validated": true,
+    "fingerprint_matches_scores": true,
+    "ats_gate": true,
+    "quality_gate": true,
+    "filenames_correct": true,
+    "required_fields_complete": true,
+    "screening_answers_verified": true,
+    "no_auth_wall": true,
+    "session_authorized_if_needed": true,
+    "form_lock_held": true,
+    "auto_submit_or_user_approved": true,
+    "daily_cap_allows": false
+  },
+  "session_lock": {
+    "held": true,
+    "resource": "form:https://jobs.ashbyhq.com/acme/frontend-cap",
+    "lock_id": "lock_fixture",
+    "run_id": "fixture-run"
+  },
+  "submits_today": 1,
+  "expected_state": "ReadyForApproval",
+  "expected_authorized": false,
+  "expected_blocking_substring": "daily_submit_cap"
+}

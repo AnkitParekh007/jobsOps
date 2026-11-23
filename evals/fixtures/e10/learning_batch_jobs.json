@@ -1,0 +1,9 @@
+{
+  "jobs": [
+    {"job_key": "url:https://jobs.example.com/a1", "status": "Applied", "country": "Germany", "lane": 1},
+    {"job_key": "url:https://jobs.example.com/a2", "status": "Rejected", "country": "Germany", "lane": 1},
+    {"job_key": "url:https://jobs.example.com/a3", "status": "Needs review", "country": "Germany", "lane": 1},
+    {"job_key": "url:https://jobs.example.com/a4", "status": "Skipped", "country": "Ireland", "lane": 1},
+    {"job_key": "url:https://jobs.example.com/a5", "status": "SubmissionUncertain", "country": "Germany", "lane": 2}
+  ]
+}

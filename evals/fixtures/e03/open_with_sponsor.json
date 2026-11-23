@@ -1,0 +1,19 @@
+{
+  "canonical_url": "https://api.lever.co/v0/postings/example/open-1",
+  "employer_or_ats_url": "https://jobs.lever.co/example/open-1",
+  "organization": "LeverDemo",
+  "role": "Forward Deployed Engineer",
+  "status": "Needs review",
+  "lane": 1,
+  "country": "Germany",
+  "source": "Lever",
+  "reason": "Open with explicit sponsorship",
+  "posting_text": "We sponsor work visas for this Munich role. Angular and TypeScript required.",
+  "availability": "open",
+  "sponsorship_quote": "We sponsor work visas for this Munich role.",
+  "evidence_refs": [
+    "https://jobs.lever.co/example/open-1"
+  ],
+  "expected_decision": "Eligible",
+  "must_not_be_eligible": false
+}

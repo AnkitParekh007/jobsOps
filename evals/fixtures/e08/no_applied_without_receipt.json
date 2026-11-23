@@ -1,0 +1,23 @@
+{
+  "description": "Portal confirmation without Gmail receipt → Submitted not Applied; uncertain → not Applied",
+  "cases": [
+    {
+      "name": "portal_only",
+      "portal_confirmation": true,
+      "gmail_receipt": false,
+      "expected_outcome": "Submitted"
+    },
+    {
+      "name": "neither",
+      "portal_confirmation": false,
+      "gmail_receipt": false,
+      "expected_outcome": "SubmissionUncertain"
+    },
+    {
+      "name": "both",
+      "portal_confirmation": true,
+      "gmail_receipt": true,
+      "expected_outcome": "Applied"
+    }
+  ]
+}

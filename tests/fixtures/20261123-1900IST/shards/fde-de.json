@@ -1,0 +1,233 @@
+{
+  "shard_id": "fde-de",
+  "run_id": "20261123-1900IST",
+  "lane": 1,
+  "lane_name": "forward-deployed",
+  "country": "Germany",
+  "mode": "http",
+  "exhausted": false,
+  "sources_tried": [
+    "Ashby posting API (DE FDE boards)",
+    "Arbeitnow public API",
+    "GermanTechJobs HTML search",
+    "WeAreDevelopers Germany HTML",
+    "Berlin Startup Jobs HTML",
+    "EnglishJobs.de FDE listing",
+    "Greenhouse boards API (Databricks/Cresta)",
+    "Personio DE boards",
+    "SmartRecruiters Redcare",
+    "Join.com Omnisent",
+    "Workable Circonomit API",
+    "Capgemini careers HTML",
+    "Amazon.jobs Berlin FDE",
+    "DuckDuckGo HTML ATS discovery",
+    "OpenAI Ashby board"
+  ],
+  "sources_blocked": [
+    {
+      "source": "GermanTechJobs",
+      "reason": "JS shell only — no Forward Deployed results in HTTP fetch"
+    },
+    {
+      "source": "Berlin Startup Jobs",
+      "reason": "HTTP blocked / unusable listing in http mode"
+    },
+    {
+      "source": "WeAreDevelopers",
+      "reason": "Listing page without usable FDE job links in HTTP"
+    },
+    {
+      "source": "Indeed Germany",
+      "reason": "JS/CAPTCHA — skipped in http mode"
+    },
+    {
+      "source": "Arbeitnow API search=forward deployed",
+      "reason": "Search does not filter; returns unrelated DE jobs"
+    }
+  ],
+  "sources_remaining_readable": [
+    "More employer Ashby/Greenhouse/Personio boards beyond opened set",
+    "StepStone Germany (historically blocked; not forced)",
+    "LinkedIn (out of policy for this worker)"
+  ],
+  "duplicates_seen": [
+    "https://jobs.ashbyhq.com/openai/05223b5a-5ff1-4fe7-9f97-4ef7fc68b8ef",
+    "https://jobs.ashbyhq.com/andercore/62581e4f-a29a-4ba1-8eac-32c1b8101d26",
+    "https://jobs.ashbyhq.com/iceye/f1923306-9ffa-4b2f-bee3-c7472c711167",
+    "https://job-boards.greenhouse.io/staffbase/jobs/8869895002",
+    "https://job-boards.greenhouse.io/celonis/jobs/8198943003",
+    "https://www.google.com/about/careers/applications/jobs/results/121140160912859846-senior-forward-deployed-engineer-generative-ai-google-cloud-munich-berlin-frankfurt-or-hamburg",
+    "https://www.codecentric.de/karriere/jobs/2716826-forward-deployed-engineer-wdm",
+    "https://bewerben.de.nttdata.com/job/M%C3%BCnchen-Forward-Deployed-Engineer-%28wmx%29-AI-&-Enterprise-Solutions-80807/1451379733",
+    "https://career.accilium.com/o/forward-deployed-engineer-fmx",
+    "https://salesforce.wd12.myworkdayjobs.com/en-US/External_Career_Site/job/Forward-Deployed-Engineer_JR358360-1"
+  ],
+  "matches": [
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/limetax/60b6a45a-031b-46ef-a8ee-39269723b74a",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/limetax/60b6a45a-031b-46ef-a8ee-39269723b74a",
+      "organization": "Limetax",
+      "role": "Forward Deployed Engineer (m/f/d)",
+      "status": "Skipped",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard language gate: professional German essential for tax-advisory stakeholders"
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/qorelo/34fffea8-09a3-41c6-96b5-a2f0a671893a",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/qorelo/34fffea8-09a3-41c6-96b5-a2f0a671893a",
+      "organization": "Qorelo",
+      "role": "Forward Deployed Engineer – SAP (m/f/d)",
+      "status": "Needs review",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Berlin/DACH FDE; German is a plus; sponsorship not evidenced"
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/Clera/e2c5a274-47cc-414a-862e-33a2e8ab91b4",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/Clera/e2c5a274-47cc-414a-862e-33a2e8ab91b4",
+      "organization": "Clera",
+      "role": "Forward Deployed Engineer",
+      "status": "Skipped",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard auth gate: visa sponsorship is not available"
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/dryft/76c36c29-47bc-4c39-8e39-799a40881ac4",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/dryft/76c36c29-47bc-4c39-8e39-799a40881ac4",
+      "organization": "Dryft",
+      "role": "Forward Deployed Engineer - Germany",
+      "status": "Skipped",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard language gate: native-level German required"
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/Applied/839a96a2-aec5-4428-b045-ae15633a4a76",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/Applied/839a96a2-aec5-4428-b045-ae15633a4a76",
+      "organization": "Applied Intuition",
+      "role": "Forward Deployed Engineer (EMEA)",
+      "status": "Needs review",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Munich EMEA FDE; sponsorship not evidenced"
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/supermodular.ai/42fc98a4-9714-4998-9ae4-e379b22b0ba0",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/supermodular.ai/42fc98a4-9714-4998-9ae4-e379b22b0ba0",
+      "organization": "supermodular.ai",
+      "role": "Senior Forward Deployed Engineer | Germany",
+      "status": "Needs review",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Munich senior FDE; sponsorship not evidenced"
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/taktile/d56d9c0d-5585-43d1-bc94-304bcc4ba11f",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/taktile/d56d9c0d-5585-43d1-bc94-304bcc4ba11f",
+      "organization": "Taktile",
+      "role": "Senior Forward Deployed Engineer",
+      "status": "Skipped",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard skill gap: production-grade Python/SQL required"
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/stackfuel/7169ce40-0606-44de-a50b-c3f8614e0aaa",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/stackfuel/7169ce40-0606-44de-a50b-c3f8614e0aaa",
+      "organization": "StackFuel",
+      "role": "Senior Forward Deployed Engineer - AI / Fullstack(f/m/d)",
+      "status": "Skipped",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard gates: business-fluent German and Python (FastAPI/Django) required"
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/reonic/d5f39c43-195d-442f-9fe2-b7f456a343eb",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/reonic/d5f39c43-195d-442f-9fe2-b7f456a343eb",
+      "organization": "Reonic",
+      "role": "Forward Deployed Engineer - (AI x Greentech) (m/f/d)",
+      "status": "Skipped",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard language gate: fluent German required"
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/comstruct/cd46c600-3c24-4f24-8e80-067915231799",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/comstruct/cd46c600-3c24-4f24-8e80-067915231799",
+      "organization": "comstruct",
+      "role": "Founding Forward Deployed Engineer (FDE)",
+      "status": "Skipped",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard language gate: native German required"
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/n8n/fb5e4f97-a769-4b87-95f4-bdc5e4c3b031",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/n8n/fb5e4f97-a769-4b87-95f4-bdc5e4c3b031",
+      "organization": "n8n",
+      "role": "Lead Forward Deployed Engineer - EMEA",
+      "status": "Needs review",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Berlin/EMEA lead FDE; company can sponsor visas to Germany; people-lead scope"
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/tacto/c90de680-5c9e-4cee-990a-3e78459e1b78",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/tacto/c90de680-5c9e-4cee-990a-3e78459e1b78",
+      "organization": "Tacto",
+      "role": "Forward Deployed Engineer",
+      "status": "Skipped",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Hard gates: native-level German and working-level Python/SQL"
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/lio/933adcc3-36a7-4ecc-9321-348142ff9297",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/lio/933adcc3-36a7-4ecc-9321-348142ff9297",
+      "organization": "Lio",
+      "role": "Forward Deployed Engineer (all genders)",
+      "status": "Needs review",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Munich FDE; English must, German plus; sponsorship not evidenced"
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/openai/5d5b2256-ee0f-4ba6-a983-d62d0d70515d",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/openai/5d5b2256-ee0f-4ba6-a983-d62d0d70515d",
+      "organization": "OpenAI",
+      "role": "Manager, Forward Deployed Engineering - Munich",
+      "status": "Needs review",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "Munich FDE manager; JS or Python OK; relocation assistance; sponsorship not explicitly evidenced"
+    },
+    {
+      "canonical_url": "https://careers.capgemini.com/job/Muenchen-Senior-Forward-Deployed-Engineer-Insurance-%28wmd%29/1433258233/",
+      "employer_or_ats_url": "https://careers.capgemini.com/job/Muenchen-Senior-Forward-Deployed-Engineer-Insurance-%28wmd%29/1433258233/",
+      "organization": "Capgemini",
+      "role": "Senior Forward Deployed Engineer Insurance (w/m/d)",
+      "status": "Skipped",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Capgemini careers",
+      "reason": "Hard gates: German-language posting and practical Python development required"
+    }
+  ],
+  "notes": "http-only; stopped at target 15. Prefer Ashby employer pages; many DE roles hard-skip on German C1/native or Python. GermanTechJobs/BerlinStartupJobs/WeAreDevelopers/Indeed blocked or unusable in HTTP. Not exhausted—more employer boards remain."
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "event_id": "evt_valid_001",
+  "run_id": "20261123-1900IST",
+  "job_key": "url:https://jobs.ashbyhq.com/example/abc",
+  "task_id": "task_valid_001",
+  "producer": "discovery-worker",
+  "artifact_type": "discovered_job",
+  "created_at": "2026-11-23T13:30:00Z",
+  "policy_version": "jobops-p1-2026-11",
+  "trace_id": "tr_valid_001",
+  "status": "Needs review",
+  "payload": {
+    "canonical_url": "https://jobs.ashbyhq.com/example/abc",
+    "role": "Forward Deployed Engineer"
+  },
+  "evidence_refs": [
+    "https://jobs.ashbyhq.com/example/abc"
+  ],
+  "blocking_reasons": [
+    "sponsorship_not_evidenced"
+  ],
+  "retryable": false
+}

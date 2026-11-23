@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jobops.local/contracts/learning-event.schema.json",
+  "title": "LearningEvent",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "learning_id",
+    "kind",
+    "summary",
+    "matured_apps",
+    "lane_country",
+    "findings",
+    "proposal_only",
+    "mutates_policy",
+    "approval_required",
+    "evidence_refs",
+    "policy_version"
+  ],
+  "properties": {
+    "learning_id": { "type": "string", "minLength": 1 },
+    "kind": {
+      "type": "string",
+      "enum": ["outcome_analyst", "pattern_gap", "experiment", "policy_proposal"]
+    },
+    "summary": { "type": "string", "minLength": 1 },
+    "matured_apps": { "type": "integer", "minimum": 0 },
+    "lane_country": { "type": "string" },
+    "n_threshold": { "type": "integer", "minimum": 1 },
+    "threshold_met": { "type": "boolean" },
+    "findings": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "blockers": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "proposal_only": { "type": "boolean", "const": true },
+    "mutates_policy": { "type": "boolean", "const": false },
+    "approval_required": { "type": "boolean", "const": true },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "policy_version": { "type": "string", "minLength": 1 },
+    "notes": { "type": "string" }
+  }
+}

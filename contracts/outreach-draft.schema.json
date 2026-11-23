@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jobops.local/contracts/outreach-draft.schema.json",
+  "title": "OutreachDraft",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "draft_id",
+    "job_key",
+    "organization",
+    "contact_name",
+    "contact_source",
+    "draft_body",
+    "status",
+    "auto_send",
+    "approval_required",
+    "evidence_refs",
+    "policy_version"
+  ],
+  "properties": {
+    "draft_id": { "type": "string", "minLength": 1 },
+    "job_key": { "type": "string", "minLength": 1 },
+    "canonical_url": {
+      "type": ["string", "null"],
+      "pattern": "^https?://"
+    },
+    "organization": { "type": "string" },
+    "role": { "type": "string" },
+    "contact_name": { "type": "string", "minLength": 1 },
+    "contact_email": { "type": ["string", "null"] },
+    "contact_source": { "type": "string", "minLength": 1 },
+    "contact_verified": { "type": "boolean" },
+    "referral": { "type": "boolean" },
+    "draft_subject": { "type": "string" },
+    "draft_body": { "type": "string", "minLength": 1 },
+    "follow_up_due": { "type": ["string", "null"] },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "approved", "sent", "replied", "declined", "opted_out"]
+    },
+    "auto_send": { "type": "boolean", "const": false },
+    "approval_required": { "type": "boolean", "const": true },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "policy_version": { "type": "string", "minLength": 1 },
+    "notes": { "type": "string" }
+  }
+}

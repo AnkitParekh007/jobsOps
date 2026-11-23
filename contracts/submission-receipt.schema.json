@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jobops.local/contracts/submission-receipt.schema.json",
+  "title": "SubmissionReceipt",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "job_key",
+    "canonical_url",
+    "run_id",
+    "outcome",
+    "portal_confirmation",
+    "gmail_receipt",
+    "evidence_refs",
+    "retryable",
+    "policy_version"
+  ],
+  "properties": {
+    "job_key": { "type": "string", "minLength": 1 },
+    "canonical_url": {
+      "type": "string",
+      "pattern": "^https?://"
+    },
+    "run_id": { "type": "string", "minLength": 1 },
+    "outcome": {
+      "type": "string",
+      "enum": ["Applied", "Submitted", "SubmissionUncertain"]
+    },
+    "portal_confirmation": { "type": "boolean" },
+    "gmail_receipt": { "type": "boolean" },
+    "confirmation_url": { "type": ["string", "null"] },
+    "gmail_message_id": { "type": ["string", "null"] },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "pdf_fingerprint": { "type": ["string", "null"] },
+    "retryable": { "type": "boolean" },
+    "blocking_reasons": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "policy_version": { "type": "string", "minLength": 1 },
+    "notes": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "outcome": { "const": "Applied" } },
+        "required": ["outcome"]
+      },
+      "then": {
+        "properties": {
+          "gmail_receipt": { "const": true },
+          "retryable": { "const": false }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "outcome": { "const": "SubmissionUncertain" } },
+        "required": ["outcome"]
+      },
+      "then": {
+        "properties": {
+          "retryable": { "const": false }
+        }
+      }
+    }
+  ]
+}

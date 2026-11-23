@@ -1,0 +1,18 @@
+{
+  "canonical_url": "https://jobs.example.com/in/hybrid-1",
+  "employer_or_ats_url": "https://jobs.example.com/in/hybrid-1",
+  "organization": "IndiaHybrid",
+  "role": "Senior Frontend Engineer",
+  "status": "Eligible",
+  "lane": 2,
+  "country": "India",
+  "source": "synthetic",
+  "reason": "India hybrid marked Eligible incorrectly",
+  "work_model": "hybrid — quarterly week in Bangalore office",
+  "posting_text": "Hybrid role with mandatory quarterly week in office. Not fully remote.",
+  "evidence_refs": [
+    "https://jobs.example.com/in/hybrid-1"
+  ],
+  "expected_decision": "Skipped",
+  "must_not_be_eligible": true
+}

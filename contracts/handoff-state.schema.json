@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jobops.local/contracts/handoff-state.schema.json",
+  "title": "HandoffState",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "run_id",
+    "floor",
+    "cumulative_handoff_matches",
+    "floor_met",
+    "readable_sources_exhausted",
+    "sources_tried",
+    "sources_blocked",
+    "sources_remaining_readable",
+    "matches",
+    "phase"
+  ],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "floor": { "type": "integer", "minimum": 1 },
+    "cumulative_handoff_matches": { "type": "integer", "minimum": 0 },
+    "floor_met": { "type": "boolean" },
+    "readable_sources_exhausted": { "type": "boolean" },
+    "sources_tried": { "type": "array", "items": { "type": "string" } },
+    "sources_blocked": { "type": "array" },
+    "sources_remaining_readable": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "matches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["canonical_url", "status"],
+        "properties": {
+          "canonical_url": { "type": "string", "pattern": "^https?://" },
+          "status": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string" },
+          "employer_or_ats_url": { "type": "string" },
+          "organization": { "type": "string" },
+          "role": { "type": "string" },
+          "lane": {},
+          "country": { "type": "string" },
+          "source": { "type": "string" },
+          "shard_id": { "type": "string" },
+          "job_key": { "type": "string" },
+          "evidence_refs": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": true
+      }
+    },
+    "updated_at_asia_calcutta": { "type": "string" },
+    "phase": {
+      "type": "string",
+      "enum": ["discovery", "post-discovery", "complete"]
+    },
+    "eligible_count": { "type": "integer", "minimum": 0 },
+    "merge": { "type": "object" }
+  }
+}

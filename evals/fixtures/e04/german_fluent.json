@@ -1,0 +1,19 @@
+{
+  "canonical_url": "https://jobs.ashbyhq.com/example/de-fluent-1",
+  "employer_or_ats_url": "https://jobs.ashbyhq.com/example/de-fluent-1",
+  "organization": "BerlinSoft",
+  "role": "Staff Frontend Engineer",
+  "status": "Eligible",
+  "lane": 2,
+  "country": "Germany",
+  "source": "Ashby",
+  "reason": "Fluent German required",
+  "posting_text": "Fluent German required for stakeholder workshops. Visa sponsorship available.",
+  "availability": "open",
+  "sponsorship_quote": "Visa sponsorship available.",
+  "evidence_refs": [
+    "https://jobs.ashbyhq.com/example/de-fluent-1"
+  ],
+  "expected_decision": "Skipped",
+  "must_not_be_eligible": true
+}

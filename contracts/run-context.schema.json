@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jobops.local/contracts/run-context.schema.json",
+  "title": "RunContext",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "created_at",
+    "policy_version",
+    "verified_facts",
+    "preferences",
+    "exclusion",
+    "session_inventory",
+    "lock"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "minLength": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "minLength": 1 },
+    "policy_version": { "type": "string", "minLength": 1 },
+    "verified_facts": {
+      "type": "object",
+      "required": ["source_urls", "facts", "contradictions"],
+      "properties": {
+        "source_urls": { "type": "array", "items": { "type": "string" } },
+        "facts": { "type": "array", "items": { "type": "string" } },
+        "contradictions": { "type": "array", "items": { "type": "string" } },
+        "notes_path": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "preferences": {
+      "type": "object",
+      "required": [
+        "country_priority",
+        "sponsorship_required_countries",
+        "daily_submit_cap",
+        "handoff_floor"
+      ],
+      "properties": {
+        "country_priority": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "sponsorship_required_countries": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "daily_submit_cap": { "type": "integer", "minimum": 1, "maximum": 1 },
+        "handoff_floor": { "type": "integer", "minimum": 1 },
+        "india_remote_only": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "exclusion": {
+      "type": "object",
+      "required": ["canonical_url_count", "prior_job_key_count", "path"],
+      "properties": {
+        "canonical_url_count": { "type": "integer", "minimum": 0 },
+        "prior_job_key_count": { "type": "integer", "minimum": 0 },
+        "path": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "session_inventory": {
+      "type": "object",
+      "required": ["portals", "unknown_allowed"],
+      "properties": {
+        "portals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["portal", "status"],
+            "properties": {
+              "portal": { "type": "string" },
+              "status": {
+                "type": "string",
+                "enum": ["authorized", "missing", "unknown"]
+              },
+              "account_hint": { "type": ["string", "null"] }
+            },
+            "additionalProperties": true
+          }
+        },
+        "unknown_allowed": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "lock": {
+      "type": "object",
+      "required": ["acquired", "lock_id"],
+      "properties": {
+        "acquired": { "type": "boolean" },
+        "lock_id": { "type": ["string", "null"] },
+        "resource": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "gates": {
+      "type": "object",
+      "properties": {
+        "sheet_append_proven": { "type": "boolean" },
+        "discovery_allowed": { "type": "boolean" },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    }
+  }
+}

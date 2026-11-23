@@ -1,0 +1,20 @@
+{
+  "description": "ATS score fingerprint does not match PDF fingerprint — stale scores",
+  "job_key": "url:https://jobs.ashbyhq.com/acme/frontend-stale",
+  "canonical_url": "https://jobs.ashbyhq.com/acme/frontend-stale",
+  "organization": "Acme",
+  "role": "Frontend Engineer",
+  "ats_score": 90,
+  "quality_score": 88,
+  "pdf_fingerprint": "ddd111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "ats_score_fingerprint": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "quality_score_fingerprint": "ddd111bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee5",
+  "fingerprint_method": "fixture",
+  "extracted_text": "Ankit Parekh\nAngular React TypeScript\nProfessional Experience",
+  "checklist": {
+    "hard_eligibility_met": true,
+    "filenames_correct": true
+  },
+  "expected_state": "Preparing",
+  "expected_blocking_substring": "ats_fingerprint_mismatch"
+}

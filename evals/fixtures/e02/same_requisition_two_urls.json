@@ -1,0 +1,8 @@
+{
+  "description": "Same Ashby requisition via tracking URL and clean URL — must not pass as two new jobs",
+  "urls": [
+    "https://jobs.ashbyhq.com/limetax/60b6a45a-031b-46ef-a8ee-39269723b74a?utm_source=board",
+    "https://jobs.ashbyhq.com/limetax/60b6a45a-031b-46ef-a8ee-39269723b74a/"
+  ],
+  "existing_keys": []
+}

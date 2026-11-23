@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jobops.local/contracts/application-package.schema.json",
+  "title": "ApplicationPackage",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "job_key",
+    "canonical_url",
+    "run_id",
+    "state",
+    "ats_score",
+    "quality_score",
+    "pdf_fingerprint",
+    "fingerprint_method",
+    "checklist",
+    "blocking_reasons",
+    "policy_version"
+  ],
+  "properties": {
+    "job_key": { "type": "string", "minLength": 1 },
+    "canonical_url": {
+      "type": "string",
+      "pattern": "^https?://"
+    },
+    "run_id": { "type": "string", "minLength": 1 },
+    "organization": { "type": "string" },
+    "role": { "type": "string" },
+    "state": {
+      "type": "string",
+      "enum": [
+        "Preparing",
+        "MaterialsValidated",
+        "ReadyForApproval",
+        "SubmissionAuthorized",
+        "Submitting",
+        "Applied",
+        "SubmissionUncertain"
+      ]
+    },
+    "sop_status": { "type": "string" },
+    "pdf_path": { "type": ["string", "null"] },
+    "pdf_fingerprint": { "type": "string", "minLength": 1 },
+    "fingerprint_method": {
+      "type": "string",
+      "enum": ["sha256_bytes", "sha256_normalized_text", "fixture"]
+    },
+    "ats_score": { "type": "number", "minimum": 0, "maximum": 100 },
+    "quality_score": { "type": "number", "minimum": 0, "maximum": 100 },
+    "ats_score_fingerprint": { "type": ["string", "null"] },
+    "quality_score_fingerprint": { "type": ["string", "null"] },
+    "extracted_text": { "type": "string" },
+    "checklist": {
+      "type": "object",
+      "additionalProperties": { "type": "boolean" }
+    },
+    "session_lock": {
+      "type": "object",
+      "properties": {
+        "held": { "type": "boolean" },
+        "resource": { "type": "string" },
+        "lock_id": { "type": ["string", "null"] },
+        "run_id": { "type": ["string", "null"] }
+      }
+    },
+    "daily_cap": {
+      "type": "object",
+      "properties": {
+        "cap": { "type": "integer" },
+        "submits_today": { "type": "integer" },
+        "remaining": { "type": "integer" }
+      }
+    },
+    "evidence_package": { "type": "object" },
+    "blocking_reasons": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "retryable": { "type": "boolean" },
+    "policy_version": { "type": "string", "minLength": 1 },
+    "notes": { "type": "string" }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "matches": [
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/golden/german-c1",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/golden/german-c1",
+      "organization": "GoldenDE",
+      "role": "FDE",
+      "status": "Needs review",
+      "lane": 1,
+      "country": "Germany",
+      "source": "Ashby",
+      "reason": "German C1 required — hard miss",
+      "evidence_quote": "German C1 required",
+      "posting_text": "Fluent German C1 essential. Visa sponsorship available."
+    },
+    {
+      "canonical_url": "https://jobs.ashbyhq.com/golden/no-visa",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/golden/no-visa",
+      "organization": "GoldenIE",
+      "role": "Frontend",
+      "status": "Needs review",
+      "lane": 2,
+      "country": "Ireland",
+      "source": "Ashby",
+      "reason": "No visa sponsorship",
+      "evidence_quote": "Visa sponsorship is not available",
+      "posting_text": "Visa sponsorship is not available. TypeScript required."
+    }
+  ]
+}

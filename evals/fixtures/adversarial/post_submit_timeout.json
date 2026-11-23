@@ -1,0 +1,6 @@
+{
+  "description": "Browser timed out after click — must not record Applied",
+  "confirmation_seen": false,
+  "gmail_receipt": false,
+  "expected_decision": "On hold"
+}

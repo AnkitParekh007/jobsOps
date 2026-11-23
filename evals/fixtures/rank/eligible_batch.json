@@ -1,0 +1,76 @@
+{
+  "matches": [
+    {
+      "job_key": "url:https://jobs.ashbyhq.com/acme/fde-de-1",
+      "canonical_url": "https://jobs.ashbyhq.com/acme/fde-de-1",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/acme/fde-de-1",
+      "organization": "Acme",
+      "role": "Forward Deployed Engineer",
+      "status": "Eligible",
+      "eligibility_decision": "Eligible",
+      "lane": 1,
+      "country": "Germany",
+      "reason": "Visa sponsorship available; React TypeScript fit",
+      "evidence_quote": "Visa sponsorship available",
+      "sponsorship_quote": "Visa sponsorship available",
+      "posting_text": "Senior Forward Deployed Engineer. React TypeScript Angular enterprise frontend. RAG and agentic AI workflows. Visa sponsorship available for this Berlin role.",
+      "posting_date": "2026-11-22"
+    },
+    {
+      "job_key": "url:https://jobs.ashbyhq.com/acme/fe-ie-1",
+      "canonical_url": "https://jobs.ashbyhq.com/acme/fe-ie-1",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/acme/fe-ie-1",
+      "organization": "Beta",
+      "role": "Frontend Architect",
+      "status": "Eligible",
+      "eligibility_decision": "Eligible",
+      "lane": 2,
+      "country": "Ireland",
+      "reason": "We sponsor visas; frontend architecture",
+      "sponsorship_quote": "We sponsor visas",
+      "posting_text": "Lead frontend architect. React TypeScript. We sponsor visas. Platform engineering.",
+      "posting_date": "2026-10-01"
+    },
+    {
+      "job_key": "url:https://jobs.ashbyhq.com/acme/fe-my-1",
+      "canonical_url": "https://jobs.ashbyhq.com/acme/fe-my-1",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/acme/fe-my-1",
+      "organization": "Gamma",
+      "role": "React Engineer",
+      "status": "Eligible",
+      "eligibility_decision": "Eligible",
+      "lane": 2,
+      "country": "Malaysia",
+      "reason": "React TypeScript role in MY",
+      "posting_text": "React TypeScript engineer. Junior level.",
+      "posting_date": "2026-11-20"
+    },
+    {
+      "job_key": "url:https://jobs.ashbyhq.com/acme/review-1",
+      "canonical_url": "https://jobs.ashbyhq.com/acme/review-1",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/acme/review-1",
+      "organization": "Delta",
+      "role": "FDE",
+      "status": "Needs review",
+      "eligibility_decision": "Needs review",
+      "lane": 1,
+      "country": "Germany",
+      "reason": "sponsorship not evidenced",
+      "blocking_reasons": ["sponsorship_not_evidenced"],
+      "posting_text": "Forward Deployed Engineer React TypeScript. Relocation support available.",
+      "posting_date": "2026-11-21"
+    },
+    {
+      "job_key": "url:https://jobs.ashbyhq.com/acme/skip-1",
+      "canonical_url": "https://jobs.ashbyhq.com/acme/skip-1",
+      "employer_or_ats_url": "https://jobs.ashbyhq.com/acme/skip-1",
+      "organization": "Epsilon",
+      "role": "Python Engineer",
+      "status": "Skipped",
+      "lane": 1,
+      "country": "Germany",
+      "reason": "Python required",
+      "posting_text": "Python required. German fluent."
+    }
+  ]
+}

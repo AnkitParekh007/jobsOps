@@ -1,0 +1,19 @@
+{
+  "canonical_url": "https://jobs.ashbyhq.com/example/unknown-avail-1",
+  "employer_or_ats_url": "https://jobs.ashbyhq.com/example/unknown-avail-1",
+  "organization": "Opaque Labs",
+  "role": "Senior Frontend Engineer",
+  "status": "Eligible",
+  "lane": 2,
+  "country": "Germany",
+  "source": "Ashby",
+  "reason": "Could not confirm live posting",
+  "posting_text": "",
+  "availability": "unknown",
+  "sponsorship_quote": "Visa sponsorship available.",
+  "evidence_refs": [
+    "https://jobs.ashbyhq.com/example/unknown-avail-1"
+  ],
+  "expected_decision": "Needs review",
+  "must_not_be_eligible": true
+}

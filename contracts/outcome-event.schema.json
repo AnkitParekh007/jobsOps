@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jobops.local/contracts/outcome-event.schema.json",
+  "title": "OutcomeEvent",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "job_key",
+    "outcome_type",
+    "source",
+    "message_id",
+    "subject",
+    "classified_at",
+    "reconcile_to",
+    "evidence_refs",
+    "policy_version"
+  ],
+  "properties": {
+    "job_key": { "type": "string", "minLength": 1 },
+    "canonical_url": {
+      "type": ["string", "null"],
+      "pattern": "^https?://"
+    },
+    "organization": { "type": "string" },
+    "role": { "type": "string" },
+    "outcome_type": {
+      "type": "string",
+      "enum": [
+        "receipt",
+        "rejection",
+        "assessment",
+        "interview",
+        "offer",
+        "follow_up",
+        "unknown"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "enum": ["gmail", "portal", "fixture", "manual"]
+    },
+    "message_id": { "type": "string", "minLength": 1 },
+    "thread_id": { "type": ["string", "null"] },
+    "subject": { "type": "string" },
+    "snippet": { "type": "string" },
+    "from_address": { "type": "string" },
+    "received_at": { "type": ["string", "null"] },
+    "classified_at": { "type": "string", "minLength": 1 },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    },
+    "reconcile_to": {
+      "type": ["string", "null"]
+    },
+    "prior_status": { "type": ["string", "null"] },
+    "reconciled": { "type": "boolean" },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "blocking_reasons": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "policy_version": { "type": "string", "minLength": 1 },
+    "notes": { "type": "string" }
+  }
+}
