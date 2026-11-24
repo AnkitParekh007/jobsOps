@@ -1,7 +1,7 @@
 # JobOps Marketing Website — React / Vite
 
-This is the React migration of the *existing* JobOps marketing site, isolated from the Python CLI.
-The original **website/** remains untouched until the React implementation has passed review.
+This React/Vite app powers the JobOps marketing website independently from the Python CLI.
+The original **website/** is retained for archival parity and rollback; the Pages workflow publishes **web-react/dist/**.
 
 ## Existing pages and preserved routes
 
