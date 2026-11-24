@@ -43,6 +43,25 @@ try{
   await page.waitForFunction(()=>document.documentElement.dataset.reactReady==='true');
   await page.keyboard.press('/');
   await page.waitForURL('**/search/');
+  // Direct hash links should scroll the support card beneath the floating header.
+  await page.goto(origin+'#support',{waitUntil:'networkidle'});
+  await page.waitForFunction(()=>location.hash==='#support'&&document.querySelector('#support')&&Math.abs(document.querySelector('#support').getBoundingClientRect().top)<180);
+  if(await page.locator('#support .support-coffee').count()!==1)throw Error('Support card missing');
+  // When already at the anchor, repeated Support clicks should also scroll back to it.
+  await page.evaluate(()=>window.scrollTo(0,0));
+  if(width<=900)await page.locator('#menu').click();
+  await page.locator('.nav-support').click();
+  await page.waitForFunction(()=>Math.abs(document.querySelector('#support').getBoundingClientRect().top)<180);
+  // Support navigation from a nested clean URL must land on the root support card.
+  await page.goto(origin+'docs/',{waitUntil:'networkidle'});
+  if(width<=900)await page.locator('#menu').click();
+  const supportLink=page.locator('.nav-support');
+  const linkHref=await supportLink.getAttribute('href');
+  await supportLink.click();
+  await page.waitForFunction(()=>window.location.hash==='#support'&&(window.location.pathname.endsWith('/jobsOps/')||window.location.pathname.endsWith('/jobsOps')),null,{timeout:10000}).catch(()=>{
+    throw new Error('Support route did not change from docs; href='+linkHref+' actual='+page.url());
+  });
+  await page.waitForFunction(()=>document.querySelector('#support')&&Math.abs(document.querySelector('#support').getBoundingClientRect().top)<180);
   await page.goto(origin);
   if(width<=900)await page.locator('#menu').click();
   await page.locator('.header nav a[href$="/docs/"]').click();
