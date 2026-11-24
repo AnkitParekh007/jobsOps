@@ -37,6 +37,7 @@ try{
   await page.waitForURL('**/search.html?q=security');
   if(await page.locator('.result').count()<1)throw Error('search results');
   await page.goto(origin);
+  await page.waitForFunction(()=>document.documentElement.dataset.reactReady==='true');
   await page.keyboard.press('/');
   await page.waitForURL('**/search.html');
   await context.close();
