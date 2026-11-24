@@ -35,10 +35,6 @@ def run():
                         response = page.goto(f"{origin}/{route}.html", wait_until="networkidle")
                         assert response and response.status == 200, (route, "not_found")
                         assert page.locator("main h1").count() == 1, (route, "missing_heading")
-                        logos = page.locator("img.brand-mark")
-                        assert logos.count() == 2, (route, "header_footer_logo")
-                        assert all(logos.nth(i).evaluate("(img) => img.complete && img.naturalWidth > 0")
-                                   for i in range(2)), (route, "logo_not_loaded")
                         delta = page.evaluate("document.documentElement.scrollWidth - innerWidth")
                         assert delta <= 1, (route, width, "horizontal_overflow", delta)
                         assert not errors, (route, errors)
@@ -67,21 +63,36 @@ def run():
                         second = github.bounding_box()
                         assert first and second
                         assert abs(first["y"] - second["y"]) <= 3, "desktop support CTAs must share a row"
-                    page.locator("#theme").click()
+                    brand = page.locator(".header img.brand-mark")
+                    assert brand.count() == 1, "logo missing"
+                    assert brand.evaluate("(img) => img.complete && img.naturalWidth > 0"), "logo not loaded"
+                    assert page.locator("footer img.brand-mark").count() == 1
+                    assert page.locator(".header").evaluate("(e) => getComputedStyle(e).position") == "sticky"
+                    assert page.locator(".header .nav").evaluate(
+                        "(e) => parseFloat(getComputedStyle(e).borderRadius)") >= 15
+                    assert page.locator('.theme-mode').count() == 3
+                    assert page.locator('button[data-mode="light"]').get_attribute("aria-pressed") == "true"
+                    page.locator('button[data-mode="dark"]').click()
                     assert page.locator("html").get_attribute("data-theme") == "dark"
+                    assert page.locator('button[data-mode="dark"]').get_attribute("aria-pressed") == "true"
                     if width == 1440:
                         page.screenshot(path=str(OUT / "home-dark-1440.png"), full_page=True)
                     page.reload(wait_until="networkidle")
                     assert page.locator("html").get_attribute("data-theme") == "dark"
-                    page.locator("#theme").click()
+                    page.locator('button[data-mode="light"]').click()
                     assert page.locator("html").get_attribute("data-theme") == "light"
+                    assert page.locator('button[data-mode="dark"]').get_attribute("aria-pressed") == "false"
                     if width == 1440:
                         page.screenshot(path=str(OUT / "home-light-1440.png"), full_page=True)
+                    page.locator('button[data-mode="auto"]').click()
+                    assert page.locator('button[data-mode="auto"]').get_attribute("aria-pressed") == "true"
+                    assert page.locator("html").get_attribute("data-theme") == "dark", "system theme should follow OS"
+                    page.locator('button[data-mode="light"]').click()
                     page.locator("#hero-query").fill("discovery")
                     page.locator(".hero-search button").click()
                     page.wait_for_url("**/search.html?q=discovery")
                     assert page.locator(".result").count() >= 1
-                    if width <= 700:
+                    if width <= 900:
                         menu = page.locator("#menu")
                         assert menu.is_visible()
                         menu.click()
@@ -97,6 +108,10 @@ def run():
                                for url in links), links
                     page.goto(f"{origin}/index.html", wait_until="networkidle")
                     page.keyboard.press("/")
+                    page.wait_for_url("**/search.html")
+                    assert page.locator("#searchbox").is_visible()
+                    page.goto(f"{origin}/index.html", wait_until="networkidle")
+                    page.keyboard.press("Control+k")
                     page.wait_for_url("**/search.html")
                     assert page.locator("#searchbox").is_visible()
                     context.close()
