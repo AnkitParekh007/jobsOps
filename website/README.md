@@ -35,3 +35,7 @@ Design direction based on the [GoDocs documentation website](https://dribbble.co
 Audit-driven improvements: immediate above-the-fold documentation search, four high-level topic shortcuts, fewer ungrounded product metrics, stronger reading hierarchy, keyboard-search access, accessible native FAQ disclosures, improved navigation/current-page state, theme persistence and responsive topic cards. The mock queue is explicitly labeled illustrative. Safe, honest product positioning remains unchanged.
 
 **Release workflow:** PR review → CI desktop/mobile screenshot review → merge → existing GitHub Pages workflow deploys `website/`. Do not change GitHub Pages source, custom domain, or DNS.
+
+## Support card
+
+The homepage includes an optional supporter section based on the creator-provided screenshot. It links to the confirmed Buy Me a Coffee profile at https://buymeacoffee.com/ankitparekh and the official GitHub repository for stars and contributions. A GitHub Sponsors payment destination is intentionally not advertised until its active profile is confirmed. The card is responsive, theme-aware, keyboard-friendly and does not load external scripts or collect payment details.

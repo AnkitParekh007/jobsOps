@@ -49,6 +49,20 @@ def run():
                     assert page.locator("form.hero-search[role=search]").count() == 1
                     assert page.locator(".topic-card").count() == 4
                     assert page.locator(".faq-item").count() == 4
+                    assert page.locator(".support-panel").count() == 1
+                    coffee = page.locator("a.support-coffee")
+                    assert coffee.count() == 1
+                    assert coffee.get_attribute("href") == "https://buymeacoffee.com/ankitparekh"
+                    assert coffee.get_attribute("target") == "_blank"
+                    assert "noopener" in coffee.get_attribute("rel")
+                    github = page.locator("a.support-github")
+                    assert github.get_attribute("href") == "https://github.com/AnkitParekh007/jobsOps"
+                    assert github.get_attribute("target") == "_blank"
+                    if width == 1440:
+                        first = coffee.bounding_box()
+                        second = github.bounding_box()
+                        assert first and second
+                        assert abs(first["y"] - second["y"]) <= 3, "desktop support CTAs must share a row"
                     page.locator("#theme").click()
                     assert page.locator("html").get_attribute("data-theme") == "dark"
                     if width == 1440:
