@@ -26,5 +26,4 @@ const sections={
 "search.html":`<div class="wrap"><div class="intro">${pill('Site search')}<h1>Find what <span class="gradient">matters.</span></h1><p>Search across site pages and repository guide topics. Press <kbd>/</kbd> to open search from anywhere.</p></div><label for="searchbox" class="sr">Search pages and documentation</label><input id="searchbox" class="search" type="search" placeholder="Try discovery, installation, security, source evidence…" autocomplete="off"><p style="font-size:13px;margin-top:10px" id="count" role="status" aria-live="polite"></p><div id="results" class="results"></div></div>`
 };
 function cardHTML(c){return '<article class="card"><div class="glyph">'+c[0]+'</div><h3>'+h(c[1])+'</h3><p>'+h(c[2])+'</p><span class="tag '+(c[3]==='IMPLEMENTED'?'':'pending')+'">'+c[3]+'</span></article>'}
-const header=document.getElementById("header"),footer=document.getElementById("footer");
 export {repo, menu, docs, cards, sections};

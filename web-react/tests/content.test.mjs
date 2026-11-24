@@ -5,7 +5,7 @@ import {sections,docs,menu} from '../src/data/legacyContent.js';
 import {ROUTES,metadataFor,BASE,CANONICAL} from '../src/data/seo.js';
 test('every previous page and documentation entry is preserved',async()=>{
  const old=await readFile(new URL('../../website/assets/app.js',import.meta.url),'utf8');
- const original=old.slice(old.indexOf('const sections='),old.indexOf('const navGlyph')).trimEnd();
+ const original=old.slice(old.indexOf('const sections='),old.indexOf('const navGlyph')).replace(/const header=document\.getElementById\("header"\),footer=document\.getElementById\("footer"\);\s*$/,'').trimEnd();
  const migrated=await readFile(new URL('../src/data/legacyContent.js',import.meta.url),'utf8');
  assert.ok(migrated.includes(original),'Original page HTML templates must remain byte-for-byte intact');
  assert.deepEqual(Object.keys(sections),ROUTES);
