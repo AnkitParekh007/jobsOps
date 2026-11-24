@@ -45,6 +45,9 @@ def check():
     assert 'const repo="https://github.com/AnkitParekh007/jobsOps"' in js
     assert '"url":"AnkitParekh007/' not in js
     assert "closeMenu()" in js
+    assert js.count('class="brand-mark"') == 2, "header/footer must share logo"
+    assert (SITE / "assets/jobops-logo.svg").is_file(), "logo asset missing"
+    assert "brand-wordmark" in js
     assert "Needs review" in js and "submissions and outreach are off" in js
     visual = (SITE / "assets/godocs-theme.css").read_text()
     for color in ["#fbfbfb", "#d70716", "#a19fa1", "#0c1323", "#573c45", "#e79fab", "#ab7d81"]:
