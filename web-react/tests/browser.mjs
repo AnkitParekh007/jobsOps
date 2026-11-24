@@ -55,8 +55,12 @@ try{
   // Support navigation from a nested clean URL must land on the root support card.
   await page.goto(origin+'docs/',{waitUntil:'networkidle'});
   if(width<=900)await page.locator('#menu').click();
-  await page.locator('.nav-support').click();
-  await page.waitForURL('**/jobsOps/#support');
+  const supportLink=page.locator('.nav-support');
+  const linkHref=await supportLink.getAttribute('href');
+  await supportLink.click();
+  await page.waitForFunction(()=>window.location.hash==='#support'&&window.location.pathname.replace(/\\/$/,'').endsWith('/jobsOps'),null,{timeout:10000}).catch(()=>{
+    throw new Error('Support route did not change from docs; href='+linkHref+' actual='+page.url());
+  });
   await page.waitForFunction(()=>document.querySelector('#support')&&Math.abs(document.querySelector('#support').getBoundingClientRect().top)<180);
   await page.goto(origin);
   if(width<=900)await page.locator('#menu').click();
