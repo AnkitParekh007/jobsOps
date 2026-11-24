@@ -44,6 +44,7 @@ try{
   await page.keyboard.press('/');
   await page.waitForURL('**/search/');
   await page.goto(origin);
+  if(width<=900)await page.locator('#menu').click();
   await page.locator('.header nav a[href$="/docs/"]').click();
   await page.waitForURL('**/docs/');
   if(await page.locator('main h1').count()!==1)throw Error('navigation to clean docs route failed');
