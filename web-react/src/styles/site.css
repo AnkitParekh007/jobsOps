@@ -1,0 +1,6 @@
+@import './styles.css';
+@import './godocs-theme.css';
+/* Progressive enhancement of existing visual system. */
+html{scroll-padding-top:120px}
+button:focus-visible,a:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--accent)!important;outline-offset:3px}
+.nav-menu{font:inherit}

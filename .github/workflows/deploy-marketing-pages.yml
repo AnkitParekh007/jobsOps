@@ -1,10 +1,10 @@
-name: Deploy JobOps marketing site to GitHub Pages
+name: Deploy JobOps React website to GitHub Pages
 
 on:
   push:
     branches: [main]
     paths:
-      - "website/**"
+      - "web-react/**"
       - ".github/workflows/deploy-marketing-pages.yml"
   workflow_dispatch:
 
@@ -19,25 +19,31 @@ concurrency:
 
 jobs:
   deploy:
-    name: Publish website/ to GitHub Pages
+    name: Build, pre-render and publish React website
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    defaults:
+      run:
+        working-directory: web-react
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Validate JavaScript and no-network static checks
-        run: |
-          node --check website/assets/app.js
-          node --check website/assets/theme-init.js
-          python website/tests/static_check.py
-      - name: Configure existing GitHub Pages site
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install React dependencies
+        run: npm install --no-audit --no-fund
+      - name: Test source-content parity and metadata
+        run: npm test
+      - name: Build and pre-render crawlable HTML
+        run: npm run build
+      - name: Configure existing GitHub Pages
         uses: actions/configure-pages@v5
-      - name: Upload website folder only
+      - name: Upload only React production build
         uses: actions/upload-pages-artifact@v3
         with:
-          path: website
+          path: web-react/dist
       - name: Publish GitHub Pages
-        id: deployment
         uses: actions/deploy-pages@v4
+        id: deployment
