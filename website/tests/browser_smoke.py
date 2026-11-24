@@ -45,13 +45,24 @@ def run():
                     page.locator("#searchbox").fill("security")
                     assert page.locator(".result").count() >= 1, "search_empty"
                     page.goto(f"{origin}/index.html", wait_until="networkidle")
+                    assert page.locator("html").get_attribute("data-theme") == "light"
+                    assert page.locator("form.hero-search[role=search]").count() == 1
+                    assert page.locator(".topic-card").count() == 4
+                    assert page.locator(".faq-item").count() == 4
+                    page.locator("#theme").click()
+                    assert page.locator("html").get_attribute("data-theme") == "dark"
+                    if width == 1440:
+                        page.screenshot(path=str(OUT / "home-dark-1440.png"), full_page=True)
+                    page.reload(wait_until="networkidle")
                     assert page.locator("html").get_attribute("data-theme") == "dark"
                     page.locator("#theme").click()
                     assert page.locator("html").get_attribute("data-theme") == "light"
                     if width == 1440:
                         page.screenshot(path=str(OUT / "home-light-1440.png"), full_page=True)
-                    page.reload(wait_until="networkidle")
-                    assert page.locator("html").get_attribute("data-theme") == "light"
+                    page.locator("#hero-query").fill("discovery")
+                    page.locator(".hero-search button").click()
+                    page.wait_for_url("**/search.html?q=discovery")
+                    assert page.locator(".result").count() >= 1
                     if width <= 700:
                         menu = page.locator("#menu")
                         assert menu.is_visible()
