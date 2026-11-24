@@ -23,7 +23,7 @@ export default function Header(){
  return <header className="header"><div className="wrap nav"><Brand/>
   <nav id="links" className={'links'+(open?' open':'')} aria-label="Main navigation">
     {menu.map(([path,label])=><Link key={path} to={pathFor(path)} aria-current={location.pathname===pathFor(path)||location.pathname===pathFor(path).replace(/\/$/,'')?'page':undefined} onClick={()=>setOpen(false)}>{label}</Link>)}
-    <Link className="nav-support" to="/#support" onClick={()=>setOpen(false)}>Support</Link>
+    <Link className="nav-support" to="/#support" onClick={()=>{setOpen(false);if(location.pathname==='/'&&location.hash==='#support'){document.getElementById('support')?.scrollIntoView({block:'start'});}}}>Support</Link>
   </nav>
   <div className="right">
     <Link className="nav-search" to="/search/" title="Search documentation (/ or Ctrl+K)" aria-label="Search documentation"><NavIcon name="search"/><span>Search</span><kbd>⌘ K</kbd></Link>
