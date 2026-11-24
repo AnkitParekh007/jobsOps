@@ -177,3 +177,13 @@ a:hover{color:var(--accent)}
 @media(max-width:700px){.support-section{padding:28px 0 54px}.support-panel{padding:27px 23px;border-radius:17px;}.support-actions{gap:11px}.support-button{min-height:51px;}}
 @media(max-width:440px){.support-actions{flex-direction:column;align-items:stretch}.support-button{width:100%;}.support-copy>p:last-child{font-size:14px;}.support-kicker{font-size:11px;}}
 @media(prefers-reduced-motion:reduce){.support-button:hover{transform:none}}
+
+/* JobOps icon + wordmark (source SVG also powers the browser favicon). */
+.brand{display:inline-flex;align-items:center;gap:10px;white-space:nowrap;font-size:23px;letter-spacing:-.055em;line-height:1.1}
+.brand-mark{width:40px;height:40px;display:block;flex:0 0 40px;border-radius:11px;transition:transform .2s ease,filter .2s ease}
+.brand:hover .brand-mark{transform:translateY(-2px) rotate(-3deg);filter:drop-shadow(0 5px 6px rgba(139,28,57,.15))}
+.brand-wordmark{display:inline-flex;align-items:baseline}
+.brand-job{color:var(--ink)}
+.brand-ops{color:var(--accent)}
+@media(max-width:370px){.brand{font-size:20px;gap:7px}.brand-mark{width:35px;height:35px;flex-basis:35px}}
+@media(prefers-reduced-motion:reduce){.brand:hover .brand-mark{transform:none}}
