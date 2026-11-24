@@ -39,3 +39,9 @@ Audit-driven improvements: immediate above-the-fold documentation search, four h
 ## Support card
 
 The homepage includes an optional supporter section based on the creator-provided screenshot. It links to the confirmed Buy Me a Coffee profile at https://buymeacoffee.com/ankitparekh and the official GitHub repository for stars and contributions. A GitHub Sponsors payment destination is intentionally not advertised until its active profile is confirmed. The card is responsive, theme-aware, keyboard-friendly and does not load external scripts or collect payment details.
+
+## Identity and floating navigation refresh
+
+The header follows the owner's DailyToolsOps [navigation implementation](https://github.com/AnkitParekh007/DailyToolsOps/blob/main/website/style.css): sticky floating card with a bordered, softly translucent surface, compact desktop links, collapsible mobile navigation, search shortcut (slash or Ctrl/Cmd+K), GitHub link and three-option System/Light/Dark theme control. JobOps retains its own terminology and content.
+
+The logo is a new geometric **J + O + check** monogram in JobOps navy, red and muted rose rather than the earlier briefcase-orbit icon. The SVG is used consistently in the header, footer and favicon, and has no external assets. The unmerged logo proposal PR #13 is superseded by this direction.
