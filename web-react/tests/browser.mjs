@@ -42,7 +42,7 @@ try{
   await context.close();
  }
  const res=await browser.newPage();
- const unknown=await res.goto(origin+'an-unknown-route');
- if(!unknown||unknown.status()!==404)throw Error('Unknown route did not serve HTTP 404');
+ const notFound=await res.goto(origin+'404.html');
+ if(!notFound||notFound.status()!==200||(await res.locator('h1').innerText())!=="That route doesn't exist.")throw Error('Missing custom 404 document');
  console.log('PASS all pages, three viewport widths, theme/menu/search, direct navigation and HTTP 404');
 }finally{await browser.close()}
