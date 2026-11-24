@@ -58,7 +58,7 @@ try{
   const supportLink=page.locator('.nav-support');
   const linkHref=await supportLink.getAttribute('href');
   await supportLink.click();
-  await page.waitForFunction(()=>window.location.hash==='#support'&&window.location.pathname.replace(/\\/$/,'').endsWith('/jobsOps'),null,{timeout:10000}).catch(()=>{
+  await page.waitForFunction(()=>window.location.hash==='#support'&&(window.location.pathname.endsWith('/jobsOps/')||window.location.pathname.endsWith('/jobsOps')),null,{timeout:10000}).catch(()=>{
     throw new Error('Support route did not change from docs; href='+linkHref+' actual='+page.url());
   });
   await page.waitForFunction(()=>document.querySelector('#support')&&Math.abs(document.querySelector('#support').getBoundingClientRect().top)<180);
