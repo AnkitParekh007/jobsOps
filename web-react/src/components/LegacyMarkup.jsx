@@ -1,6 +1,7 @@
 import React from 'react';
 import parse,{attributesToProps,domToReact} from 'html-react-parser';
 import {Link} from 'react-router-dom';
+import {BASE,pathFor} from '../data/seo.js';
 /* Every literal is from committed, trusted site source. No user HTML is parsed. */
 export function ContentSection({children,...props}){return <section {...props}>{children}</section>}
 export function ToolCard({children,...props}){return <article {...props}>{children}</article>}
@@ -11,7 +12,11 @@ export default function LegacyMarkup({html}){
    const children=()=>domToReact(node.children||[],options);
    if(node.name==='a'&&props.href&&/^(?:index|features|docs|about|contact|search)\.html(?:[?#].*)?$/.test(String(props.href))){
      const {href,...rest}=props;
-     return <Link to={'/'+href} {...rest}>{children()}</Link>;
+     const match=String(href).match(/^([a-z]+\.html)(.*)$/);
+     return <Link to={pathFor(match[1])+match[2]} {...rest}>{children()}</Link>;
+   }
+   if(node.name==='form'&&props.action&&/^(?:index|features|docs|about|contact|search)\.html$/.test(String(props.action))){
+     return <form {...props} action={BASE+pathFor(props.action).slice(1)}>{children()}</form>;
    }
    if(node.name==='section')return <ContentSection {...props}>{children()}</ContentSection>;
    if(node.name==='article')return <ToolCard {...props}>{children()}</ToolCard>;

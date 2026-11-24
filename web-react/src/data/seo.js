@@ -2,7 +2,9 @@ export const SITE='https://ankitparekh007.github.io/jobsOps/';
 export const REPO='https://github.com/AnkitParekh007/jobsOps';
 export const BASE='/jobsOps/';
 export const ROUTES=['index.html','features.html','docs.html','about.html','contact.html','search.html'];
-export const CANONICAL=Object.fromEntries(ROUTES.map(p=>[p,SITE+(p==='index.html'?'':p)]));
+export const CLEAN_ROUTES=Object.fromEntries(ROUTES.map(page=>[page,page==='index.html'?'/':'/'+page.replace(/\.html$/,'/')]));
+export const pathFor=page=>CLEAN_ROUTES[page]||'/';
+export const CANONICAL=Object.fromEntries(ROUTES.map(page=>[page,SITE+pathFor(page).slice(1)]));
 export const META={
 'index.html':{title:'JobOps — Evidence-based job discovery and human review',description:'Explore JobOps, the open-source review-first toolkit for discovering public ATS jobs, preserving source evidence, detecting duplicates and making informed decisions.'},
 'features.html':{title:'JobOps Features — Discovery, Provenance and Review',description:'See which JobOps capabilities are implemented, experimental or disabled, including public ATS discovery, evidence capture, deduplication and human review controls.'},

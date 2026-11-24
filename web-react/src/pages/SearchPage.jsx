@@ -1,9 +1,10 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {Link,useLocation} from 'react-router-dom';
 import {docs,menu} from '../data/legacyContent.js';
+import {pathFor} from '../data/seo.js';
 function ResultLink({item}){
  const inner=<><small>{item.kind}</small><strong>{item.title}</strong><span>{item.summary}</span></>;
- return item.url.startsWith('http')?<a className="result" href={item.url} target="_blank" rel="noopener noreferrer">{inner}</a>:<Link className="result" to={'/'+item.url}>{inner}</Link>;
+ return item.url.startsWith('http')?<a className="result" href={item.url} target="_blank" rel="noopener noreferrer">{inner}</a>:<Link className="result" to={pathFor(item.url)}>{inner}</Link>;
 }
 export default function SearchPage(){
  const loc=useLocation(),[value,setValue]=useState(''),ref=useRef(null);
