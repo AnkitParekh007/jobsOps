@@ -180,6 +180,30 @@ The harness never passes unrestricted `--force` / `--trust`. Deterministic mode 
 
 ---
 
+## Marketing website — React migration (PR in review)
+
+The production marketing site currently lives in [website/](website/). A separate
+[Vite + React migration](web-react/) preserves all original HTML pages and
+contents while adding SEO-aware, pre-rendered React routes.
+
+```bash
+cd web-react
+npm install
+npm test
+npm run dev
+npm run build
+npm run preview
+```
+
+The Vite production build pre-renders six public routes, verifies unique metadata,
+canonical URLs, JSON-LD, sitemap, robots and 404, and is deployed by
+`.github/workflows/deploy-marketing-pages.yml` **only after the migration PR is
+merged**. The project's correct Pages base is `/jobsOps/`, not
+`/DailyToolsOps/`. To update SEO, content or pages, see
+[web-react/README.md](web-react/README.md).
+
+---
+
 ## Technical notes
 
 | Topic | Where |

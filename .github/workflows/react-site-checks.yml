@@ -1,0 +1,75 @@
+name: React website migration checks
+
+on:
+  pull_request:
+    paths:
+      - 'web-react/**'
+      - '.github/workflows/react-site-checks.yml'
+      - '.github/workflows/deploy-marketing-pages.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'web-react/**'
+      - '.github/workflows/react-site-checks.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-react
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Test original content parity
+        run: npm test
+      - name: Build static crawlable pages
+        run: npm run build
+      - name: Upload production build
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobops-react-dist
+          path: web-react/dist
+          retention-days: 7
+
+  chromium:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-react
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Build site
+        run: npm run build
+      - name: Start preview and exercise routes
+        run: |
+          npm run preview -- --port 4173 > /tmp/jobops-vite-preview.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4173/jobsOps/ > /dev/null; then break; fi
+            sleep 1
+          done
+          node tests/browser.mjs
+      - name: Save screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobops-react-browser
+          path: web-react/browser-evidence
+          if-no-files-found: ignore
+          retention-days: 14

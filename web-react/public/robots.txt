@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://ankitparekh007.github.io/jobsOps/sitemap.xml
