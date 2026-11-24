@@ -23,35 +23,35 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Validate JavaScript syntax
-        run: node --check website/assets/app.js
-      - name: Validate pages, links and preview disclaimers
+      - name: JavaScript syntax validation
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          site=Path("website")
-          pages=["index","features","docs","about","contact","search"]
-          for page in pages:
-              data=(site/f"{page}.html").read_text()
-              assert '<main id="app"></main>' in data, page
-              assert '<meta name="description"' in data, page
-              assert 'assets/app.js' in data, page
-              assert 'assets/styles.css' in data, page
-          js=(site/"assets/app.js").read_text()
-          for route in pages:
-              assert f'"{route}.html"' in js, route
-          assert 'Needs review' in js
-          assert 'submissions and outreach are off' in js
-          assert 'localStorage' in js
-          assert 'id="searchbox"' in js
-          print(f"{len(pages)} pages, navigation, documentation search and preview gates verified")
-          PY
-      - name: Confirm static site tree is self-contained
-        run: |
-          test -f website/index.html
-          test -f website/README.md
-          test -f website/assets/styles.css
-          test -f website/assets/app.js
+          node --check website/assets/app.js
+          node --check website/assets/theme-init.js
+      - name: Static accessibility, route, contrast and safety checks
+        run: python website/tests/static_check.py
 
-# Hosting is intentionally separate from code review.
-# Deploy website/ through Cloudflare Pages or GitHub Pages after owner approval.
+  browser-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Chromium for real browser tests
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Desktop/mobile browser acceptance
+        run: python website/tests/browser_smoke.py
+      - name: Attach viewport screenshots and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobops-website-browser-evidence
+          path: website-audit/
+          if-no-files-found: ignore
+          retention-days: 14
+
+# Cloudflare Pages is NOT configured or deployed by this workflow.
+# See website/CLOUDFLARE-PAGES.md for owner-controlled hosting steps.
