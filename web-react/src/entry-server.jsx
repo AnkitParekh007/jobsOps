@@ -1,7 +1,8 @@
 import React from 'react';
 import {renderToString} from 'react-dom/server';
 import {StaticRouter} from 'react-router-dom/server.js';
-import {HelmetProvider} from 'react-helmet-async';
+import HelmetAsync from 'react-helmet-async';
+const {HelmetProvider}=HelmetAsync;
 import App from './App.jsx';
 export function render(path){
  const context={};

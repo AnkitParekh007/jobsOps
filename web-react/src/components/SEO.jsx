@@ -1,5 +1,6 @@
 import React from 'react';
-import {Helmet} from 'react-helmet-async';
+import HelmetAsync from 'react-helmet-async';
+const {Helmet}=HelmetAsync;
 import {metadataFor,schemaFor} from '../data/seo.js';
 export default function SEO({page}) {
  const m=metadataFor(page);

@@ -1,4 +1,4 @@
-import {readFile,writeFile,copyFile} from 'node:fs/promises';
+import {readFile,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {createServer} from 'vite';
 import {ROUTES} from '../src/data/seo.js';
@@ -19,7 +19,6 @@ try{
       .replace('<div id="root"></div>','<div id="root">'+html+'</div>');
     await writeFile(resolve(root,'dist',route),final,'utf8');
   }
-  await copyFile(resolve(root,'dist/index.html'),resolve(root,'dist/404-shell.html'));
   // GitHub Pages should serve existing HTML pages directly; unknown paths use
   // the dedicated status-404 page copied from public/404.html.
   console.log('Pre-rendered '+ROUTES.length+' crawlable HTML documents');
