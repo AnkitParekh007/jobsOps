@@ -1,0 +1,57 @@
+name: Marketing site checks
+
+on:
+  pull_request:
+    paths:
+      - "website/**"
+      - ".github/workflows/marketing-site.yml"
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/marketing-site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate JavaScript syntax
+        run: node --check website/assets/app.js
+      - name: Validate pages, links and preview disclaimers
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          site=Path("website")
+          pages=["index","features","docs","about","contact","search"]
+          for page in pages:
+              data=(site/f"{page}.html").read_text()
+              assert '<main id="app"></main>' in data, page
+              assert '<meta name="description"' in data, page
+              assert 'assets/app.js' in data, page
+              assert 'assets/styles.css' in data, page
+          js=(site/"assets/app.js").read_text()
+          for route in pages:
+              assert f'"{route}.html"' in js, route
+          assert 'Needs review' in js
+          assert 'submissions and outreach are off' in js
+          assert 'localStorage' in js
+          assert 'id="searchbox"' in js
+          print(f"{len(pages)} pages, navigation, documentation search and preview gates verified")
+          PY
+      - name: Confirm static site tree is self-contained
+        run: |
+          test -f website/index.html
+          test -f website/README.md
+          test -f website/assets/styles.css
+          test -f website/assets/app.js
+
+# Hosting is intentionally separate from code review.
+# Deploy website/ through Cloudflare Pages or GitHub Pages after owner approval.
