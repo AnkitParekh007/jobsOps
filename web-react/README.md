@@ -61,3 +61,7 @@ Existing `.html` URLs have **physical pre-rendered files**, so direct visits and
 ## Migration limitations
 
 Content preservation is intentionally prioritized over redesign: the source page templates are parsed into React components at runtime *and* server-rendered at build time. Full hand conversion of each editorial paragraph to JSX can happen later without changing the HTML output. The original HTML has not been deleted.
+
+## Clean public URLs
+
+The canonical routes are `/`, `/features/`, `/docs/`, `/about/`, `/contact/`, and `/search/` under `/jobsOps/`. GitHub Pages serves an actual pre-rendered `index.html` inside each route directory. The old `.html` addresses remain as lightweight redirect documents preserving query strings and hashes when JavaScript is available. Navigation, search forms, sitemap and JSON-LD use clean URLs. The original `website/` source remains unmodified.

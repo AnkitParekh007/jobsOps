@@ -1,6 +1,6 @@
 import {chromium} from 'playwright';
 import {mkdir} from 'node:fs/promises';
-import {ROUTES} from '../src/data/seo.js';
+import {ROUTES,pathFor} from '../src/data/seo.js';
 const origin='http://127.0.0.1:4173/jobsOps/';
 await mkdir('browser-evidence',{recursive:true});
 const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
@@ -10,7 +10,7 @@ try{
   const page=await context.newPage(), errors=[];
   page.on('pageerror',e=>errors.push(String(e)));
   for(const route of ROUTES){
-   const response=await page.goto(origin+(route==='index.html'?'':route),{waitUntil:'networkidle'});
+   const response=await page.goto(origin+pathFor(route).slice(1),{waitUntil:'networkidle'});
    if(!response||response.status()!==200)throw Error('HTTP error '+route);
    if(await page.locator('main h1').count()!==1)throw Error('heading '+route);
    const overflow=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth);
@@ -34,12 +34,20 @@ try{
   }
   await page.locator('#hero-query').fill('security');
   await page.locator('.hero-search button').click();
-  await page.waitForURL('**/search.html?q=security');
+  await page.waitForURL('**/search/?q=security');
   if(await page.locator('.result').count()<1)throw Error('search results');
+  await page.goto(origin+'features.html');
+  await page.waitForURL('**/features/');
+  if(await page.locator('main h1').count()!==1)throw Error('old feature URL failed to redirect');
   await page.goto(origin);
   await page.waitForFunction(()=>document.documentElement.dataset.reactReady==='true');
   await page.keyboard.press('/');
-  await page.waitForURL('**/search.html');
+  await page.waitForURL('**/search/');
+  await page.goto(origin);
+  if(width<=900)await page.locator('#menu').click();
+  await page.locator('.header nav a[href$="/docs/"]').click();
+  await page.waitForURL('**/docs/');
+  if(await page.locator('main h1').count()!==1)throw Error('navigation to clean docs route failed');
   await context.close();
  }
  const res=await browser.newPage();
