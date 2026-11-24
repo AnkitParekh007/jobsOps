@@ -48,6 +48,8 @@ def run():
                     assert page.locator("html").get_attribute("data-theme") == "dark"
                     page.locator("#theme").click()
                     assert page.locator("html").get_attribute("data-theme") == "light"
+                    if width == 1440:
+                        page.screenshot(path=str(OUT / "home-light-1440.png"), full_page=True)
                     page.reload(wait_until="networkidle")
                     assert page.locator("html").get_attribute("data-theme") == "light"
                     if width <= 700:
