@@ -39,13 +39,18 @@ def check():
         parser.feed(html)
         assert parser.main == parser.title == 1, name
         for required in ["<noscript>", 'assets/theme-init.js', 'assets/favicon.svg',
-                         'assets/styles.css', 'assets/app.js', '<meta name="description"']:
+                         'assets/styles.css', 'assets/godocs-theme.css', 'assets/app.js', '<meta name="description"']:
             assert required in html, (name, required)
     js = (SITE / "assets/app.js").read_text()
     assert 'const repo="https://github.com/AnkitParekh007/jobsOps"' in js
     assert '"url":"AnkitParekh007/' not in js
     assert "closeMenu()" in js
     assert "Needs review" in js and "submissions and outreach are off" in js
+    visual = (SITE / "assets/godocs-theme.css").read_text()
+    for color in ["#fbfbfb", "#d70716", "#a19fa1", "#0c1323", "#573c45", "#e79fab", "#ab7d81"]:
+        assert color in visual.lower(), ("missing_reference_color", color)
+    assert "topic-grid" in visual and "hero-search" in visual and ".faq-grid" in visual
+    assert 1.05 / (luminance("#d70716") + .05) >= 4.5, "red CTA fails contrast"
     css = (SITE / "assets/styles.css").read_text()
     found = re.search(r"background:linear-gradient\(110deg,(#[a-f0-9]{6}),(#[a-f0-9]{6})\)",css)
     assert found, "primary gradient missing"
